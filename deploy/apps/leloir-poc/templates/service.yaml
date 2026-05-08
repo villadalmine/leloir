@@ -3,13 +3,9 @@ kind: Service
 metadata:
   name: leloir-poc
   namespace: {{ .Release.Namespace }}
-  labels:
-    app: leloir-poc
 spec:
-  type: {{ .Values.service.type }}
   selector:
     app: leloir-poc
   ports:
-    - port: {{ .Values.service.port }}
-      targetPort: {{ .Values.service.targetPort }}
-      protocol: TCP
+    - port: 3001
+      targetPort: 3001

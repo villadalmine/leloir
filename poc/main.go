@@ -2,9 +2,11 @@ package main
 
 import (
 	"bytes"
+	"embed"
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"net/http"
 	"os"
@@ -12,11 +14,14 @@ import (
 	"time"
 )
 
+//go:embed static
+var staticFiles embed.FS
+
 // ── Config ────────────────────────────────────────────────────────────────────
 
-var holmesURL = getenv("HOLMES_URL", "http://localhost:8081")
+var holmesURL = getenv("HOLMES_URL", "http://holmesgpt-holmes.holmesgpt:80")
 var holmesModel = getenv("HOLMES_MODEL", "qwen3-80b")
-var listenAddr = getenv("LISTEN_ADDR", ":3000")
+var listenAddr = getenv("LISTEN_ADDR", ":3001")
 
 func getenv(key, def string) string {
 	if v := os.Getenv(key); v != "" {
@@ -75,7 +80,7 @@ type holmesRequest struct {
 
 type holmesResponse struct {
 	Answer string `json:"answer"`
-	Detail string `json:"detail"` // error field
+	Detail string `json:"detail"`
 }
 
 func askHolmes(question string) {
@@ -105,7 +110,6 @@ func askHolmes(question string) {
 
 // ── Handlers ──────────────────────────────────────────────────────────────────
 
-// POST /webhook — Alertmanager webhook
 type amAlert struct {
 	Status      string            `json:"status"`
 	Labels      map[string]string `json:"labels"`
@@ -116,6 +120,7 @@ type amPayload struct {
 	Alerts []amAlert `json:"alerts"`
 }
 
+// POST /webhook — Alertmanager webhook
 func handleWebhook(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -143,11 +148,11 @@ func handleWebhook(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// POST /ask — manual ask from UI
 type askRequest struct {
 	Question string `json:"question"`
 }
 
+// POST /ask — pregunta manual desde la UI
 func handleAsk(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -192,14 +197,12 @@ func handleSSE(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-var staticDir = getenv("STATIC_DIR", "static")
-
-// GET / — servir UI estática
+// GET / — UI estática embebida en el binario
 func handleUI(w http.ResponseWriter, r *http.Request) {
-	http.ServeFile(w, r, staticDir+"/index.html")
+	sub, _ := fs.Sub(staticFiles, "static")
+	http.FileServer(http.FS(sub)).ServeHTTP(w, r)
 }
 
-// GET /health
 func handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("ok"))
 }

@@ -1,0 +1,33 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: leloir-poc
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: nginx
+  tls:
+    - secretName: {{ .Values.ingress.tlsSecret }}
+      hosts:
+        - {{ .Values.ingress.host }}
+  rules:
+    - host: {{ .Values.ingress.host }}
+      http:
+        paths:
+          # oauth2-proxy maneja /oauth2/* (callbacks de GitHub)
+          - path: /oauth2
+            pathType: Prefix
+            backend:
+              service:
+                name: leloir-poc-oauth2-proxy
+                port:
+                  number: 4180
+          # todo lo demás va a oauth2-proxy → autentica → proxea a leloir-poc
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: leloir-poc-oauth2-proxy
+                port:
+                  number: 4180

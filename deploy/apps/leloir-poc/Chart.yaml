@@ -1,6 +1,10 @@
 apiVersion: v2
 name: leloir-poc
-description: Leloir PoC — webhook receiver + SSE stream + UI
+description: Leloir PoC — webhook receiver + SSE UI con GitHub OAuth
 type: application
-version: 0.1.0
-appVersion: "latest"
+version: 1.0.0
+
+dependencies:
+  - name: oauth2-proxy
+    version: "8.0.2"
+    repository: https://charts.bitnami.com/bitnami

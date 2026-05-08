@@ -1,27 +1,54 @@
 # values.yaml — Leloir PoC
 #
-# Antes de que ArgoCD pueda desplegar esto, la imagen debe existir en el registry:
-#   cd poc && make push          (sube a ghcr.io)
-#   cd poc && make import        (importa directo en k3s sin registry)
+# Pre-requisitos (una sola vez):
+#   1. Build + push imagen:  ./scripts/build-poc.sh
+#   2. Crear GitHub OAuth App + secret K8s:  ./scripts/github-poc-oauth-setup.sh
+#   3. Agregar CNAME DNS para poc.leloir.cybercirujas.club (ver acme-dns-register.sh)
 
+# ── App ───────────────────────────────────────────────────────────────────────
 image:
   repository: ghcr.io/villadalmine/leloir-poc
   tag: latest
   pullPolicy: Always
 
-# URL interna del servicio Holmes dentro del cluster
-holmesURL: "http://holmesgpt-holmes.holmesgpt.svc.cluster.local"
-holmesModel: "qwen3-80b"
+holmes:
+  url: http://holmesgpt-holmes.holmesgpt:80
+  model: qwen3-80b
 
-service:
-  type: ClusterIP
-  port: 80
-  targetPort: 8080
+ingress:
+  host: poc.leloir.cybercirujas.club
+  tlsSecret: leloir-poc-tls
 
-resources:
-  requests:
-    cpu: 50m
-    memory: 32Mi
-  limits:
-    cpu: 200m
-    memory: 128Mi
+# ── oauth2-proxy ──────────────────────────────────────────────────────────────
+# Secret requerido (creado por scripts/github-poc-oauth-setup.sh):
+#   kubectl create secret generic leloir-poc-oauth -n leloir-poc \
+#     --from-literal=client-id=<GITHUB_CLIENT_ID> \
+#     --from-literal=client-secret=<GITHUB_CLIENT_SECRET> \
+#     --from-literal=cookie-secret=<32-bytes-base64>
+oauth2-proxy:
+  configuration:
+    existingSecret: leloir-poc-oauth
+    content: |
+      provider = "github"
+      upstreams = [ "http://leloir-poc:3001" ]
+      email_domains = [ "*" ]
+      silence_ping_logging = true
+      skip_provider_button = true
+      pass_access_token = false
+      cookie_secure = true
+      cookie_name = "_leloir_poc_oauth"
+
+  service:
+    type: ClusterIP
+    port: 4180
+
+  # No exponer ingress propio — el ingress lo maneja el chart padre
+  ingress:
+    enabled: false
+
+  resources:
+    requests:
+      memory: 64Mi
+      cpu: 50m
+    limits:
+      memory: 128Mi

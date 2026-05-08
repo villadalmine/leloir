@@ -15,6 +15,7 @@ BASE_DOMAIN="leloir.cybercirujas.club"
 # Default domains that need certs (extend as you add services)
 DOMAINS=(
   "grafana.${BASE_DOMAIN}"
+  "poc.${BASE_DOMAIN}"
 )
 
 ADD_DOMAIN=""
