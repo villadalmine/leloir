@@ -28,6 +28,11 @@ poc/
 # Claude Code — memoria y settings locales
 .claude/
 
+# Meta local — no publicar en el remoto
+/CLAUDE.md
+/INDEX.md
+/index.md
+
 # Kubernetes secrets — NUNCA commitear, crear con kubectl
 secrets/
 *.secret.yaml
