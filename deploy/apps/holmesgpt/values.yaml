@@ -16,6 +16,8 @@ holmes:
         secretKeyRef:
           name: holmes-secrets
           key: openrouter-api-key
+    - name: OVERRIDE_MAX_OUTPUT_TOKEN
+      value: "4096"
 
   modelList:
     # Modelos free con distintos providers para evitar rate limit simultáneo

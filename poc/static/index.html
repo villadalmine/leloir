@@ -277,7 +277,9 @@
   }
 
   function logout() {
-    window.location.href = '/oauth2/sign_out?rd=https://poc.leloir.cybercirujas.club/';
+    fetch('/oauth2/sign_out', {method: 'POST', credentials: 'include'})
+      .catch(() => {})
+      .finally(() => { window.location.href = '/oauth2/sign_out'; });
   }
 </script>
 
