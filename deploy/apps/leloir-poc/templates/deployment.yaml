@@ -30,6 +30,8 @@ spec:
               value: "{{ .Values.holmes.url }}"
             - name: HOLMES_MODEL
               value: "{{ .Values.holmes.model }}"
+            - name: HOLMES_FALLBACK
+              value: "{{ .Values.holmes.fallback }}"
             - name: LISTEN_ADDR
               value: ":3001"
           livenessProbe:

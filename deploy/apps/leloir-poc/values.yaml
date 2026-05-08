@@ -14,7 +14,8 @@ image:
 
 holmes:
   url: http://holmesgpt-holmes.holmesgpt:80
-  model: qwen3-80b
+  model: gemma4-31b
+  fallback: nemotron-super
 
 ingress:
   host: poc.leloir.cybercirujas.club
