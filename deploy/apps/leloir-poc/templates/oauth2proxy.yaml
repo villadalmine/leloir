@@ -25,9 +25,11 @@ spec:
             - --email-domain=*
             - --cookie-secure=true
             - --cookie-name=_leloir_poc
-            - --skip-provider-button=true
+            - --skip-provider-button=false
             - --silence-ping-logging=true
             - --redirect-url=https://{{ .Values.ingress.host }}/oauth2/callback
+            - --whitelist-domain={{ .Values.ingress.host }}
+            - --upstream-timeout=120s
           env:
             - name: OAUTH2_PROXY_CLIENT_ID
               valueFrom:
