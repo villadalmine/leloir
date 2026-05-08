@@ -20,6 +20,9 @@ kube-prometheus-stack:
           key: client-secret
 
     grafana.ini:
+      server:
+        domain: grafana.leloir.cybercirujas.club
+        root_url: https://grafana.leloir.cybercirujas.club/
       auth.github:
         enabled: true
         allow_sign_up: true
