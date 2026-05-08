@@ -1,0 +1,17 @@
+# install-argocd.yaml — Instala ArgoCD en el cluster
+# Bootstrap (solo la primera vez):
+#   kubectl create namespace argocd
+#   kubectl apply -n argocd -f poc/argocd/install-argocd.yaml
+#
+# Acceder a la UI (password inicial: admin / ver abajo):
+#   kubectl port-forward svc/argocd-server -n argocd 8080:443
+#   kubectl get secret argocd-initial-admin-secret -n argocd \
+#     -o jsonpath="{.data.password}" | base64 -d
+
+# Instala ArgoCD desde el upstream oficial
+# Reemplazar la URL por una versión fija en producción
+# https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+#
+# Para aplicar:
+#   kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+#   kubectl apply -f poc/argocd/applicationset.yaml

@@ -1,0 +1,164 @@
+# applicationset.yaml — Leloir PoC ApplicationSet
+# Despliega todo el stack del PoC desde el repo Git usando ArgoCD ApplicationSet.
+#
+# Apply:
+#   kubectl apply -f poc/argocd/applicationset.yaml
+#
+# Cada elemento del list generator genera una Application de ArgoCD.
+# Para agregar un componente nuevo: añadir un elemento a la lista.
+#
+# Prerequisito: ArgoCD instalado en namespace argocd.
+# Ver: poc/argocd/install-argocd.yaml
+
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: leloir-poc
+  namespace: argocd
+spec:
+  goTemplate: true
+
+  generators:
+    - list:
+        elements:
+          # ── Prometheus + Alertmanager + Grafana ──────────────────────
+          - name: prometheus
+            namespace: monitoring
+            repoPath: poc/helm
+            chart: prometheus-community/kube-prometheus-stack
+            sourceType: helm
+            helmValuesFile: prometheus-values.yaml
+            createNamespace: "true"
+
+          # ── Sample app (dispara alertas) ─────────────────────────────
+          - name: sample-app
+            namespace: sample-app
+            repoPath: poc/manifests
+            sourceType: directory
+            createNamespace: "true"
+
+  template:
+    metadata:
+      name: "leloir-poc-{{.name}}"
+      annotations:
+        argocd.argoproj.io/sync-wave: "{{if eq .name \"prometheus\"}}1{{else}}2{{end}}"
+    spec:
+      project: default
+
+      # Origen del código — actualizar repoURL cuando el repo esté en GitHub
+      source:
+        repoURL: https://github.com/leloir/leloir.git
+        targetRevision: HEAD
+        path: "{{.repoPath}}"
+
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: "{{.namespace}}"
+
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace={{.createNamespace}}
+          - ServerSideApply=true
+
+---
+# ApplicationSet para Helm charts (Prometheus usa un chart externo, no un path local)
+# Separado porque ArgoCD maneja Helm repos y Git repos de forma diferente.
+
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: leloir-poc-helm
+  namespace: argocd
+spec:
+  goTemplate: true
+
+  generators:
+    - list:
+        elements:
+          - name: prometheus
+            namespace: monitoring
+            chart: prometheus-community/kube-prometheus-stack
+            repoURL: https://prometheus-community.github.io/helm-charts
+            valuesPath: poc/helm/prometheus-values.yaml
+
+  template:
+    metadata:
+      name: "leloir-poc-helm-{{.name}}"
+      annotations:
+        argocd.argoproj.io/sync-wave: "1"
+    spec:
+      project: default
+
+      sources:
+        # Chart externo de Helm
+        - repoURL: "{{.repoURL}}"
+          chart: "{{.chart}}"
+          targetRevision: "*"
+          helm:
+            valueFiles:
+              - "$values/{{.valuesPath}}"
+
+        # Values desde nuestro repo Git
+        - repoURL: https://github.com/leloir/leloir.git
+          targetRevision: HEAD
+          ref: values
+
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: "{{.namespace}}"
+
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+          - ServerSideApply=true
+
+---
+# ApplicationSet para manifests YAML directos desde el repo Git
+
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: leloir-poc-manifests
+  namespace: argocd
+spec:
+  goTemplate: true
+
+  generators:
+    - list:
+        elements:
+          - name: sample-app
+            namespace: sample-app
+            path: poc/manifests
+
+  template:
+    metadata:
+      name: "leloir-poc-{{.name}}"
+      annotations:
+        argocd.argoproj.io/sync-wave: "2"
+    spec:
+      project: default
+
+      source:
+        repoURL: https://github.com/leloir/leloir.git
+        targetRevision: HEAD
+        path: "{{.path}}"
+        directory:
+          recurse: false
+
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: "{{.namespace}}"
+
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+          - ServerSideApply=true

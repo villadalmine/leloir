@@ -1,0 +1,123 @@
+# sample-app.yaml — App de prueba que genera alertas para Leloir M0
+# Deploy: kubectl apply -f poc/manifests/sample-app.yaml
+#
+# Expone un endpoint HTTP simple. Rompiendo el deployment (replicas=0)
+# o inyectando errores se disparan las PrometheusRules definidas abajo.
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: sample-app
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sample-app
+  namespace: sample-app
+  labels:
+    app: sample-app
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: sample-app
+  template:
+    metadata:
+      labels:
+        app: sample-app
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+        - name: sample-app
+          image: docker.io/prom/prometheus:latest
+          # Usamos prometheus como binario HTTP con métricas built-in
+          # para no necesitar una imagen custom
+          command: ["/bin/prometheus"]
+          args:
+            - "--config.file=/etc/prometheus/prometheus.yml"
+            - "--web.listen-address=:8080"
+            - "--storage.tsdb.path=/tmp/data"
+          ports:
+            - containerPort: 8080
+              name: http
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 128Mi
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sample-app
+  namespace: sample-app
+  labels:
+    app: sample-app
+spec:
+  selector:
+    app: sample-app
+  ports:
+    - port: 8080
+      targetPort: 8080
+      name: http
+
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: sample-app
+  namespace: sample-app
+  labels:
+    release: prom
+spec:
+  selector:
+    matchLabels:
+      app: sample-app
+  endpoints:
+    - port: http
+      interval: 15s
+  namespaceSelector:
+    matchNames:
+      - sample-app
+
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: sample-app-alerts
+  namespace: monitoring
+  labels:
+    release: prom
+spec:
+  groups:
+    - name: sample-app
+      interval: 15s
+      rules:
+        - alert: SampleAppDown
+          expr: absent(up{namespace="sample-app"}) or sum(up{namespace="sample-app"}) == 0
+          for: 15s
+          labels:
+            severity: critical
+            namespace: sample-app
+            app: sample-app
+          annotations:
+            summary: "Sample app is down"
+            description: "All sample-app pods have been down for more than 15 seconds."
+
+        - alert: SampleAppReplicasMissing
+          expr: kube_deployment_status_replicas_available{namespace="sample-app", deployment="sample-app"} < 1
+          for: 15s
+          labels:
+            severity: warning
+            namespace: sample-app
+            app: sample-app
+          annotations:
+            summary: "Sample app has no available replicas"
+            description: "Deployment sample-app has 0 available replicas."
