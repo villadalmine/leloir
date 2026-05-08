@@ -1,0 +1,63 @@
+# root-appset.yaml — LA ApplicationSet raíz de Leloir
+# =====================================================
+# Se aplica UNA SOLA VEZ después de instalar ArgoCD.
+# Después de esto, TODO el stack se gestiona agregando carpetas en deploy/apps/.
+#
+# Metodología:
+#   - Una carpeta en deploy/apps/ = una Application de ArgoCD
+#   - Si la carpeta tiene Chart.yaml  → ArgoCD la trata como Helm chart
+#   - Si no tiene Chart.yaml          → ArgoCD la trata como manifests YAML
+#   - Agregar componente: mkdir deploy/apps/<nombre>/, git push
+#   - Eliminar componente: rm -rf deploy/apps/<nombre>/, git push
+#
+# Apply:
+#   kubectl apply -f deploy/root-appset.yaml
+
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: leloir
+  namespace: argocd
+spec:
+  goTemplate: true
+
+  generators:
+    - git:
+        repoURL: https://github.com/leloir/leloir.git
+        revision: HEAD
+        directories:
+          - path: deploy/apps/*
+
+  template:
+    metadata:
+      name: "{{.path.basename}}"
+      labels:
+        app.kubernetes.io/managed-by: leloir-appset
+        app.kubernetes.io/name: "{{.path.basename}}"
+    spec:
+      project: default
+
+      source:
+        repoURL: https://github.com/leloir/leloir.git
+        targetRevision: HEAD
+        path: "{{.path}}"
+
+      destination:
+        server: https://kubernetes.default.svc
+        # Namespace = nombre de la carpeta (ej: prometheus, sample-app, holmesgpt)
+        namespace: "{{.path.basename}}"
+
+      syncPolicy:
+        automated:
+          prune: true       # elimina recursos que ya no están en git
+          selfHeal: true    # revierte cambios manuales en el cluster
+        syncOptions:
+          - CreateNamespace=true   # crea el namespace si no existe
+          - ServerSideApply=true   # necesario para CRDs grandes (Prometheus)
+          - RespectIgnoreDifferences=true
+
+      ignoreDifferences:
+        - group: apps
+          kind: Deployment
+          jsonPointers:
+            - /spec/replicas   # no revertir scaling manual

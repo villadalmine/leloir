@@ -1,0 +1,33 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: sample-app-alerts
+  namespace: sample-app
+  labels:
+    release: prom
+spec:
+  groups:
+    - name: sample-app
+      interval: 15s
+      rules:
+        - alert: SampleAppDown
+          expr: absent(up{namespace="sample-app"}) or sum(up{namespace="sample-app"}) == 0
+          for: 15s
+          labels:
+            severity: critical
+            namespace: sample-app
+            app: sample-app
+          annotations:
+            summary: "Sample app is down"
+            description: "All sample-app pods have been down for more than 15 seconds."
+
+        - alert: SampleAppReplicasMissing
+          expr: kube_deployment_status_replicas_available{namespace="sample-app",deployment="sample-app"} < 1
+          for: 15s
+          labels:
+            severity: warning
+            namespace: sample-app
+            app: sample-app
+          annotations:
+            summary: "Sample app has no available replicas"
+            description: "Deployment sample-app/sample-app has 0 available replicas."
