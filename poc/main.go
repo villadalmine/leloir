@@ -80,9 +80,15 @@ type holmesRequest struct {
 	Model string `json:"model"`
 }
 
+type toolCall struct {
+	ToolName    string `json:"tool_name"`
+	Description string `json:"description"`
+}
+
 type holmesResponse struct {
-	Analysis string `json:"analysis"` // campo real de Holmes API
-	Detail   string `json:"detail"`
+	Analysis  string     `json:"analysis"`
+	Detail    string     `json:"detail"`
+	ToolCalls []toolCall `json:"tool_calls"`
 }
 
 func callHolmes(question, model string) (holmesResponse, error) {
@@ -128,6 +134,9 @@ func askHolmes(question string) {
 			hub.publish(Event{Type: "error", Text: "Holmes error: " + err.Error()})
 			return
 		}
+	}
+	for _, tc := range hr.ToolCalls {
+		hub.publish(Event{Type: "thinking", Text: "🔧 " + tc.ToolName + ": " + tc.Description})
 	}
 	hub.publish(Event{Type: "answer", Text: hr.Analysis})
 }

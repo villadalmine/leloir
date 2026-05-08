@@ -130,6 +130,17 @@
     .event.info      { background: #0d1f38; color: #93c5fd; }
     .event.answer    { background: #1a1200; color: #fde68a; border-left: 3px solid #f59e0b; }
     .event.error     { background: #2d0f0f; color: #fca5a5; }
+    .event.thinking  { background: #1a1a2e; color: #818cf8; font-size: 0.8rem; font-family: monospace; }
+    .event.thinking.hidden { display: none; }
+
+    #thinking-toggle {
+      font-size: 0.75rem;
+      padding: 4px 10px;
+    }
+    #thinking-toggle.active {
+      border-color: #818cf8;
+      color: #818cf8;
+    }
 
     .empty-state {
       flex: 1;
@@ -178,6 +189,7 @@
   <h1>Leloir PoC</h1>
   <span class="badge">M0</span>
   <div class="header-actions">
+    <button class="icon-btn" id="thinking-toggle" onclick="toggleThinking()" title="Mostrar/ocultar razonamiento de Holmes">🧠 Thinking</button>
     <button class="icon-btn" onclick="clearEvents()" title="Limpiar eventos">⟳ Limpiar</button>
     <button class="icon-btn danger" onclick="logout()" title="Cerrar sesión">⏻ Logout</button>
   </div>
@@ -208,13 +220,25 @@
   const input    = document.getElementById('question');
   const btn      = document.getElementById('ask-btn');
 
+  let showThinking = false;
+
   function addEvent(type, text, ts) {
     if (emptyEl) emptyEl.remove();
     const div = document.createElement('div');
     div.className = 'event ' + (type || '');
+    if (type === 'thinking' && !showThinking) div.classList.add('hidden');
     div.innerHTML = `<span class="ts">${ts || ''}</span><span class="text">${escHtml(text)}</span>`;
     eventsEl.appendChild(div);
     eventsEl.scrollTop = eventsEl.scrollHeight;
+  }
+
+  function toggleThinking() {
+    showThinking = !showThinking;
+    const btn = document.getElementById('thinking-toggle');
+    btn.classList.toggle('active', showThinking);
+    document.querySelectorAll('.event.thinking').forEach(el => {
+      el.classList.toggle('hidden', !showThinking);
+    });
   }
 
   function escHtml(s) {
