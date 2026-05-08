@@ -6,5 +6,5 @@ version: 1.0.0
 
 dependencies:
   - name: holmes
-    version: "*"
+    version: "0.28.0"
     repository: https://robusta-charts.storage.googleapis.com
