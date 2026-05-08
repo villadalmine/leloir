@@ -81,8 +81,8 @@ type holmesRequest struct {
 }
 
 type holmesResponse struct {
-	Answer string `json:"answer"`
-	Detail string `json:"detail"`
+	Analysis string `json:"analysis"` // campo real de Holmes API
+	Detail   string `json:"detail"`
 }
 
 func callHolmes(question, model string) (holmesResponse, error) {
@@ -99,6 +99,9 @@ func callHolmes(question, model string) (holmesResponse, error) {
 	}
 	if hr.Detail != "" {
 		return hr, fmt.Errorf("%s", hr.Detail)
+	}
+	if hr.Analysis == "" {
+		return hr, fmt.Errorf("respuesta vacía de Holmes (raw: %s)", raw)
 	}
 	return hr, nil
 }
@@ -126,7 +129,7 @@ func askHolmes(question string) {
 			return
 		}
 	}
-	hub.publish(Event{Type: "answer", Text: hr.Answer})
+	hub.publish(Event{Type: "answer", Text: hr.Analysis})
 }
 
 // ── Handlers ──────────────────────────────────────────────────────────────────
