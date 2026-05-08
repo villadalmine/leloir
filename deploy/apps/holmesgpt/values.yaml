@@ -18,10 +18,21 @@ holmes:
           key: openrouter-api-key
 
   modelList:
+    # Modelos free con distintos providers para evitar rate limit simultáneo
+    gemma4-31b:
+      api_key: "{{ env.OPENROUTER_API_KEY }}"
+      model: openrouter/google/gemma-4-31b-it:free
+      temperature: 0
+
+    nemotron-super:
+      api_key: "{{ env.OPENROUTER_API_KEY }}"
+      model: openrouter/nvidia/nemotron-3-super-120b-a12b:free
+      temperature: 0
+
     qwen3-80b:
       api_key: "{{ env.OPENROUTER_API_KEY }}"
       model: openrouter/qwen/qwen3-next-80b-a3b-instruct:free
       temperature: 0
 
   config:
-    model: "qwen3-80b"
+    model: "gemma4-31b"

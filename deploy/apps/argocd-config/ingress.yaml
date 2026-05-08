@@ -4,10 +4,15 @@ metadata:
   name: argocd-server
   namespace: argocd
   annotations:
-    nginx.ingress.kubernetes.io/ssl-passthrough: "true"
-    nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
 spec:
   ingressClassName: nginx
+  tls:
+    - secretName: argocd-tls
+      hosts:
+        - argocd.leloir.cybercirujas.club
   rules:
     - host: argocd.leloir.cybercirujas.club
       http:
@@ -18,4 +23,4 @@ spec:
               service:
                 name: argocd-server
                 port:
-                  number: 443
+                  number: 80

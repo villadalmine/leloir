@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-cmd-params-cm
+  namespace: argocd
+data:
+  # Permite que NGINX termine TLS con cert-manager (Let's Encrypt)
+  # y ArgoCD reciba HTTP plano del ingress
+  server.insecure: "true"
