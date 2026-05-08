@@ -107,6 +107,8 @@ cluster_up() {
         --tmpfs /var/run \
         --name "${CONTAINER_NAME}" \
         -p "${API_PORT}:6443" \
+        -p 80:80 \
+        -p 443:443 \
         -d \
         "${K3S_IMAGE}" server \
         --disable traefik \

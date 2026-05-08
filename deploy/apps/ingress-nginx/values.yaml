@@ -1,0 +1,21 @@
+ingress-nginx:
+  controller:
+    # HostPort: el container k3s tiene 80/443 mapeados al host
+    hostPort:
+      enabled: true
+      ports:
+        http: 80
+        https: 443
+    service:
+      type: ClusterIP
+    # Un solo replica para single-node
+    replicaCount: 1
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        memory: 256Mi
+    # Clase por defecto
+    ingressClassResource:
+      default: true

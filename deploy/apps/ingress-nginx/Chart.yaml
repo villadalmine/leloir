@@ -1,0 +1,10 @@
+apiVersion: v2
+name: ingress-nginx
+description: NGINX Ingress Controller para Leloir
+type: application
+version: 1.0.0
+
+dependencies:
+  - name: ingress-nginx
+    version: "*"
+    repository: https://kubernetes.github.io/ingress-nginx

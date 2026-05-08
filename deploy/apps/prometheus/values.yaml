@@ -6,8 +6,14 @@ kube-prometheus-stack:
     enabled: true
     adminPassword: "leloir-poc"
     service:
-      type: NodePort
-      nodePort: 30300
+      type: ClusterIP
+    ingress:
+      enabled: true
+      ingressClassName: nginx
+      hosts:
+        - grafana.leloir.cybercirujas.club
+      paths:
+        - /
 
   prometheus:
     prometheusSpec:

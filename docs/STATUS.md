@@ -44,8 +44,8 @@
 
 | # | Item | When | How |
 |---|---|---|---|
-| P1 | Verify `github.com/leloir` org availability | Day 1 of M0 | `gh api orgs/leloir` (404 = available); fallback `leloir-platform` |
-| P2 | Verify `leloir.dev` domain availability | Day 1 of M0 | Google Domains / Cloudflare Registrar |
+| P1 | Verify `github.com/leloir` org availability | Day 1 of M0 | `gh api orgs/leloir` (404 = available); fallback `leloir-platform` | ✅ AVAILABLE |
+| P2 | ~~Verify `leloir.dev` domain availability~~ | ~~Day 1 of M0~~ | Using `leloir.cybercirujas.club` (Namecheap, already owned) | ✅ RESOLVED |
 | P3 | Trademark search "Leloir" in IT classes | Day 1 of M0 | tmsearch.uspto.gov + euipo.europa.eu |
 | P4 | Azure OpenAI access for corporate testing | Start request Day 1 (can take weeks) | Internal IT ticket; meanwhile use GitHub Copilot via `gh` token |
 | P5 | Team formed for M1 | By Day 10 of M0 | 1 Go backend + 1 React frontend + 1 platform/SRE + part-time PM |
