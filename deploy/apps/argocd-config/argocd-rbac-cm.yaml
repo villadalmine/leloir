@@ -8,4 +8,4 @@ data:
   # no tiene permisos (policy.default vacío = sin acceso).
   policy.csv: |
     g, villadalmine, role:admin
-  policy.default: role:
+  policy.default: "role:"
