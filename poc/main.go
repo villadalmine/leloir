@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 )
@@ -20,7 +21,8 @@ var staticFiles embed.FS
 // ── Config ────────────────────────────────────────────────────────────────────
 
 var holmesURL = getenv("HOLMES_URL", "http://holmesgpt-holmes.holmesgpt:80")
-var holmesModel = getenv("HOLMES_MODEL", "nemotron-super")
+var holmesModel = getenv("HOLMES_MODEL", "gemma4-31b")
+var holmesFallback = getenv("HOLMES_FALLBACK", "nemotron-super")
 var listenAddr = getenv("LISTEN_ADDR", ":3001")
 
 func getenv(key, def string) string {
@@ -83,27 +85,46 @@ type holmesResponse struct {
 	Detail string `json:"detail"`
 }
 
+func callHolmes(question, model string) (holmesResponse, error) {
+	body, _ := json.Marshal(holmesRequest{Ask: question, Model: model})
+	resp, err := http.Post(holmesURL+"/api/chat", "application/json", bytes.NewReader(body))
+	if err != nil {
+		return holmesResponse{}, err
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	var hr holmesResponse
+	if err := json.Unmarshal(raw, &hr); err != nil {
+		return holmesResponse{}, fmt.Errorf("respuesta inválida: %s", raw)
+	}
+	if hr.Detail != "" {
+		return hr, fmt.Errorf("%s", hr.Detail)
+	}
+	return hr, nil
+}
+
+func isRateLimit(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := err.Error()
+	return strings.Contains(s, "429") || strings.Contains(s, "RateLimitError") || strings.Contains(s, "rate-limited")
+}
+
 func askHolmes(question string) {
 	hub.publish(Event{Type: "info", Text: "Investigando: " + question})
 
-	body, _ := json.Marshal(holmesRequest{Ask: question, Model: holmesModel})
-	resp, err := http.Post(holmesURL+"/api/chat", "application/json", bytes.NewReader(body))
+	hr, err := callHolmes(question, holmesModel)
 	if err != nil {
-		hub.publish(Event{Type: "error", Text: "No se pudo conectar a Holmes: " + err.Error()})
-		return
-	}
-	defer resp.Body.Close()
-
-	raw, _ := io.ReadAll(resp.Body)
-
-	var hr holmesResponse
-	if err := json.Unmarshal(raw, &hr); err != nil {
-		hub.publish(Event{Type: "error", Text: "Respuesta inválida de Holmes: " + string(raw)})
-		return
-	}
-	if hr.Detail != "" {
-		hub.publish(Event{Type: "error", Text: "Holmes error: " + hr.Detail})
-		return
+		if isRateLimit(err) && holmesFallback != "" {
+			log.Printf("modelo %s rate-limited, reintentando con %s", holmesModel, holmesFallback)
+			hub.publish(Event{Type: "info", Text: fmt.Sprintf("Modelo %s saturado, usando %s…", holmesModel, holmesFallback)})
+			hr, err = callHolmes(question, holmesFallback)
+		}
+		if err != nil {
+			hub.publish(Event{Type: "error", Text: "Holmes error: " + err.Error()})
+			return
+		}
 	}
 	hub.publish(Event{Type: "answer", Text: hr.Answer})
 }
@@ -217,6 +238,6 @@ func main() {
 	http.HandleFunc("/", handleUI)
 
 	log.Printf("Leloir PoC escuchando en %s", listenAddr)
-	log.Printf("Holmes URL: %s  modelo: %s", holmesURL, holmesModel)
+	log.Printf("Holmes URL: %s  modelo: %s  fallback: %s", holmesURL, holmesModel, holmesFallback)
 	log.Fatal(http.ListenAndServe(listenAddr, nil))
 }
