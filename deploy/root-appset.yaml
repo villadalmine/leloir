@@ -23,7 +23,7 @@ spec:
 
   generators:
     - git:
-        repoURL: https://github.com/leloir/leloir.git
+        repoURL: https://github.com/villadalmine/leloir.git
         revision: HEAD
         directories:
           - path: deploy/apps/*
@@ -38,7 +38,7 @@ spec:
       project: default
 
       source:
-        repoURL: https://github.com/leloir/leloir.git
+        repoURL: https://github.com/villadalmine/leloir.git
         targetRevision: HEAD
         path: "{{.path}}"
 
