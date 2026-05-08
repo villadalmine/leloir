@@ -19,3 +19,23 @@ vendor/
 
 # k8s / helm
 *.kubeconfig
+kubeconfig
+
+# Private — documentación personal, planes, milestones (quedan solo en local)
+docs/
+poc/
+
+# Claude Code — memoria y settings locales
+.claude/
+
+# Kubernetes secrets — NUNCA commitear, crear con kubectl
+secrets/
+*.secret.yaml
+*-secret.yaml
+*-credentials.yaml
+acme-dns-account.json
+
+# Archivos locales del entorno del usuario
+OPENBSD_UPGRADE_CHECKLIST.txt
+openbsd-upgrade-helper.sh
+local-*

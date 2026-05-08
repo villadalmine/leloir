@@ -12,15 +12,15 @@ No se puede usar rootless podman porque no tiene permisos para crear cgroup dire
 
 **Levantar/bajar el cluster:**
 ```bash
-sudo ./scripts/cluster-up.sh           # levanta k3s (puertos 80, 443, 6443)
+sudo ./scripts/cluster-up.sh           # levanta k3s (puertos 443, 6443)
 sudo ./scripts/cluster-up.sh --down    # baja y elimina el container
 sudo ./scripts/cluster-up.sh --status  # estado actual
 ```
 
 **Después de recrear el cluster**, siempre actualizar el kubeconfig:
 ```bash
-sudo podman exec k3s-server cat /etc/rancher/k3s/k3s.yaml > /home/dalmine/.kube/config
-sudo chown dalmine:dalmine /home/dalmine/.kube/config
+sudo podman exec k3s-server cat /etc/rancher/k3s/k3s.yaml > ~/.kube/config
+sudo chown $USER:$USER ~/.kube/config
 ```
 
 ---
@@ -48,11 +48,27 @@ kubectl apply -f deploy/root-appset.yaml
 
 **Eso es todo.** ArgoCD lee `deploy/apps/*/` y despliega cada carpeta automáticamente:
 - `deploy/apps/ingress-nginx/` → NGINX Ingress Controller
+- `deploy/apps/cert-manager/`  → cert-manager + ClusterIssuers Let's Encrypt
 - `deploy/apps/prometheus/`    → Prometheus + Alertmanager + Grafana
 - `deploy/apps/argocd-config/` → Ingress para argocd.leloir.cybercirujas.club
 - `deploy/apps/sample-app/`    → App de prueba + PrometheusRules
 
-## Paso 3 — Agregar componentes futuros
+## Paso 3 — Configurar acme-dns (una sola vez, para TLS sin puerto 80)
+
+cert-manager usa DNS-01 via acme-dns.io. No requiere exponer el puerto 80.
+
+```bash
+# Registrar cuenta en acme-dns.io y crear el secret de Kubernetes
+./scripts/acme-dns-register.sh
+```
+
+El script imprime:
+1. Los registros CNAME a agregar en tu proveedor DNS
+2. El comando `kubectl create secret` listo para copiar/pegar
+
+Agregar los CNAMEs en tu proveedor DNS, luego ejecutar el comando del secret.
+
+## Paso 4 — Agregar componentes futuros
 
 ```bash
 mkdir deploy/apps/holmesgpt/
@@ -60,6 +76,11 @@ mkdir deploy/apps/holmesgpt/
 git add . && git commit -m "add holmesgpt" && git push
 # ArgoCD detecta la carpeta nueva y despliega solo
 ```
+
+Cuando se agrega un subdomain nuevo:
+1. Ejecutar `./scripts/acme-dns-register.sh --add <nuevo.dominio>` para obtener el CNAME
+2. Agregar el CNAME en el proveedor DNS
+3. Actualizar el secret existente (el script da las instrucciones)
 
 ---
 
@@ -87,33 +108,33 @@ kubectl get secret argocd-initial-admin-secret -n argocd \
 | ArgoCD UI | https://argocd.leloir.cybercirujas.club |
 | Grafana | https://grafana.leloir.cybercirujas.club |
 
-DNS: registro A en Namecheap `leloir.cybercirujas.club` → IP pública del router.
-HAProxy en el router: forward 80 y 443 → IP local de la PC.
+DNS: registro A en tu proveedor → IP pública del router.
+Router: forward 443 → IP local de la PC (HAProxy TCP passthrough / SNI).
 
 ---
 
 ## Troubleshooting
 
-### SSH al router OpenBSD 6.x falla con "incorrect signature"
+### SSH a router OpenBSD 6.x falla con "incorrect signature"
 
 Fedora (OpenSSH 9.x) negocia por defecto `mlkem768x25519-sha256` (post-cuántico),
 que es incompatible con OpenBSD 6.x. Forzar un KEX clásico:
 
 ```bash
-ssh -p54222 -o KexAlgorithms=curve25519-sha256 dalmine@81.207.69.100
+ssh -p<SSH_PORT> -o KexAlgorithms=curve25519-sha256 <USER>@<ROUTER_IP>
 ```
 
-Para no tener que escribirlo siempre, agregar a `~/.ssh/config`:
+Agregar a `~/.ssh/config` (archivo local, no commitear):
 
 ```
 Host router-leloir
-    HostName 81.207.69.100
-    Port 54222
-    User dalmine
+    HostName <ROUTER_IP>
+    Port <SSH_PORT>
+    User <USER>
     KexAlgorithms curve25519-sha256
 ```
 
-Luego conectar con: `ssh router-leloir`
+> Copiar este bloque a tu `~/.ssh/config` con los valores reales. Ese archivo es local y no va a git.
 
 ---
 
