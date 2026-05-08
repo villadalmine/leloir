@@ -92,6 +92,31 @@ HAProxy en el router: forward 80 y 443 → IP local de la PC.
 
 ---
 
+## Troubleshooting
+
+### SSH al router OpenBSD 6.x falla con "incorrect signature"
+
+Fedora (OpenSSH 9.x) negocia por defecto `mlkem768x25519-sha256` (post-cuántico),
+que es incompatible con OpenBSD 6.x. Forzar un KEX clásico:
+
+```bash
+ssh -p54222 -o KexAlgorithms=curve25519-sha256 dalmine@81.207.69.100
+```
+
+Para no tener que escribirlo siempre, agregar a `~/.ssh/config`:
+
+```
+Host router-leloir
+    HostName 81.207.69.100
+    Port 54222
+    User dalmine
+    KexAlgorithms curve25519-sha256
+```
+
+Luego conectar con: `ssh router-leloir`
+
+---
+
 ## Repo Git
 
 - Remoto actual: https://github.com/villadalmine/leloir (personal, PoC)
