@@ -8,7 +8,7 @@
 # ── App ───────────────────────────────────────────────────────────────────────
 image:
   repository: ghcr.io/villadalmine/leloir-poc
-  tag: latest
+  tag: sha-ce701c8
   pullPolicy: Always
   pullSecret: ghcr-pull-secret
 
