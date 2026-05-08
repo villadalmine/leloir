@@ -152,6 +152,23 @@
     }
     footer a { color: #4b5563; text-decoration: none; }
     footer a:hover { color: #60a5fa; }
+
+    .icon-btn {
+      background: none;
+      border: 1px solid #2d3748;
+      border-radius: 6px;
+      color: #6b7280;
+      padding: 6px 12px;
+      font-size: 0.8rem;
+      cursor: pointer;
+      transition: border-color 0.2s, color 0.2s;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .icon-btn:hover { border-color: #4b5563; color: #e2e8f0; }
+    .icon-btn.danger:hover { border-color: #ef4444; color: #ef4444; }
+    .header-actions { margin-left: auto; display: flex; gap: 8px; }
   </style>
 </head>
 <body>
@@ -160,6 +177,10 @@
   <div id="status-dot"></div>
   <h1>Leloir PoC</h1>
   <span class="badge">M0</span>
+  <div class="header-actions">
+    <button class="icon-btn" onclick="clearEvents()" title="Limpiar eventos">⟳ Limpiar</button>
+    <button class="icon-btn danger" onclick="logout()" title="Cerrar sesión">⏻ Logout</button>
+  </div>
 </header>
 
 <main>
@@ -250,6 +271,14 @@
   }
 
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter') ask(); });
+
+  function clearEvents() {
+    eventsEl.innerHTML = '<div class="empty-state" id="empty">Eventos limpiados — esperando investigaciones</div>';
+  }
+
+  function logout() {
+    window.location.href = '/oauth2/sign_out?rd=https://poc.leloir.cybercirujas.club/';
+  }
 </script>
 
 </body>
