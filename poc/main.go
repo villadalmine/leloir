@@ -136,7 +136,15 @@ func askHolmes(question string) {
 		}
 	}
 	for _, tc := range hr.ToolCalls {
-		hub.publish(Event{Type: "thinking", Text: "🔧 " + tc.ToolName + ": " + tc.Description})
+		// skip internal Holmes bookkeeping tools
+		if tc.ToolName == "TodoWrite" || tc.ToolName == "TodoRead" {
+			continue
+		}
+		desc := tc.Description
+		if len(desc) > 120 {
+			desc = desc[:120] + "…"
+		}
+		hub.publish(Event{Type: "thinking", Text: tc.ToolName + ": " + desc})
 	}
 	hub.publish(Event{Type: "answer", Text: hr.Analysis})
 }

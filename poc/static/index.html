@@ -136,10 +136,21 @@
     #thinking-toggle {
       font-size: 0.75rem;
       padding: 4px 10px;
+      background: #1a1f2e;
     }
     #thinking-toggle.active {
+      background: #2e1f5e;
       border-color: #818cf8;
-      color: #818cf8;
+      color: #c4b5fd;
+      box-shadow: 0 0 8px #818cf844;
+    }
+    #thinking-toggle::before {
+      content: '○ ';
+      font-size: 0.65rem;
+    }
+    #thinking-toggle.active::before {
+      content: '● ';
+      color: #a78bfa;
     }
 
     .empty-state {
@@ -189,7 +200,7 @@
   <h1>Leloir PoC</h1>
   <span class="badge">M0</span>
   <div class="header-actions">
-    <button class="icon-btn" id="thinking-toggle" onclick="toggleThinking()" title="Mostrar/ocultar razonamiento de Holmes">🧠 Thinking</button>
+    <button class="icon-btn" id="thinking-toggle" onclick="toggleThinking()" title="Mostrar razonamiento de Holmes"><span>🧠 Thinking</span></button>
     <button class="icon-btn" onclick="clearEvents()" title="Limpiar eventos">⟳ Limpiar</button>
     <button class="icon-btn danger" onclick="logout()" title="Cerrar sesión">⏻ Logout</button>
   </div>
@@ -236,6 +247,8 @@
     showThinking = !showThinking;
     const btn = document.getElementById('thinking-toggle');
     btn.classList.toggle('active', showThinking);
+    btn.title = showThinking ? 'Ocultar razonamiento de Holmes' : 'Mostrar razonamiento de Holmes';
+    btn.querySelector('span').textContent = showThinking ? '🧠 Thinking ON' : '🧠 Thinking';
     document.querySelectorAll('.event.thinking').forEach(el => {
       el.classList.toggle('hidden', !showThinking);
     });
