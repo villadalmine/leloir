@@ -10,7 +10,7 @@ image:
   repository: ghcr.io/villadalmine/leloir-poc
   tag: latest
   pullPolicy: Always
-  # pullSecret: ghcr-pull-secret   # descomentar si el paquete es privado
+  pullSecret: ghcr-pull-secret
 
 holmes:
   url: http://holmesgpt-holmes.holmesgpt:80
