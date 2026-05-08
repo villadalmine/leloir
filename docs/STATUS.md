@@ -87,92 +87,156 @@
 
 ## 🖥️ Cómo prender todo desde cero (runbook)
 
-El cluster k3s corre dentro de un container `podman` en esta laptop.
-Cuando apagás la laptop, el container queda **parado pero no eliminado** — todo el estado de Kubernetes se preserva. ArgoCD y los Helm charts no necesitan reinstalarse.
+El cluster k3s corre dentro de un container `podman` en esta máquina Fedora.
+Cuando apagás la máquina, el container queda **parado pero no eliminado** — todo el estado de Kubernetes se preserva. No hay que reinstalar nada.
 
-### Caso normal: reinicio de laptop / apagado y prendido
+---
+
+### Caso normal: reinicio / apagado y prendido
 
 ```bash
-# 1. Levantar el cluster (desde fuera del toolbx, como root)
+# Desde fuera del toolbx, como root
 sudo ./scripts/cluster-up.sh
 
-# 2. Verificar que todo levantó (puede tardar ~2 min)
+# Verificar que todo levantó (~2 min)
 kubectl get pods -A
 ```
 
-Eso es todo. ArgoCD detecta si hay cambios en git y sincroniza solo.
-
-### Verificar que los servicios públicos responden
+Eso es todo. ArgoCD sincroniza solo si hubo cambios en git.
 
 ```bash
-curl -sI https://poc.leloir.cybercirujas.club | head -3
-curl -sI https://argocd.leloir.cybercirujas.club | head -3
-curl -sI https://grafana.leloir.cybercirujas.club | head -3
+# Verificar que los 3 dominios responden
+curl -sI https://poc.leloir.cybercirujas.club | head -2
+curl -sI https://argocd.leloir.cybercirujas.club | head -2
+curl -sI https://grafana.leloir.cybercirujas.club | head -2
 ```
 
 ---
 
 ### Caso excepcional: cluster destruido o máquina nueva
 
-Solo necesario si corriste `sudo ./scripts/cluster-up.sh --down` o si cambiás de máquina. Los secrets no están en git y hay que recrearlos.
+Solo si corriste `--down` (borra el container y todo su estado) o migrás a otra máquina.
 
-**Paso 1 — Levantar cluster limpio**
-```bash
-sudo ./scripts/cluster-up.sh
+#### A) DNS — registros en Namecheap
+
+**URL:** https://ap.www.namecheap.com/domains/domaincontrolpanel/cybercirujas.club/advancedns
+
+**A records** (apuntan a la IP pública donde corre k3s):
+
+| Host | Tipo | Valor |
+|---|---|---|
+| `argocd.leloir` | A Record | `81.207.69.100` |
+| `grafana.leloir` | A Record | `81.207.69.100` |
+| `poc.leloir` | A Record | `81.207.69.100` |
+
+**CNAME records** (para renovación automática de TLS via acme-dns — no tocar):
+
+| Host | Tipo | Valor |
+|---|---|---|
+| `_acme-challenge.argocd.leloir` | CNAME | `58fe7dc9-4c6a-448c-b36f-616af8a45f39.auth.acme-dns.io` |
+| `_acme-challenge.grafana.leloir` | CNAME | `2ac45694-c387-43f2-8f26-6b46c7de85cb.auth.acme-dns.io` |
+
+> Si necesitás regenerar las cuentas acme-dns (cuenta nueva → nuevo CNAME):
+> ```bash
+> ./scripts/acme-dns-register.sh
+> # Imprime los nuevos CNAMEs a pegar en Namecheap
+> # Guarda las credenciales en acme-dns-account.json (backupear en password manager)
+> ```
+
+#### B) GitHub OAuth Apps — 3 apps a crear
+
+**URL:** https://github.com/settings/developers → "OAuth Apps" → "New OAuth App"
+
+**App 1 — ArgoCD**
+```
+Name:         Leloir ArgoCD
+Homepage URL: https://argocd.leloir.cybercirujas.club
+Callback URL: https://argocd.leloir.cybercirujas.club/api/dex/callback
 ```
 
-**Paso 2 — Instalar ArgoCD**
+**App 2 — Grafana**
+```
+Name:         Leloir Grafana
+Homepage URL: https://grafana.leloir.cybercirujas.club
+Callback URL: https://grafana.leloir.cybercirujas.club/login/github
+```
+
+**App 3 — PoC**
+```
+Name:         Leloir PoC
+Homepage URL: https://poc.leloir.cybercirujas.club
+Callback URL: https://poc.leloir.cybercirujas.club/oauth2/callback
+```
+
+Cargar los client ID/secret en el cluster:
 ```bash
+./scripts/github-oauth-setup.sh      # App 1 (ArgoCD) + App 2 (Grafana) en un solo paso
+./scripts/github-poc-oauth-setup.sh  # App 3 (PoC)
+```
+
+#### C) GitHub PAT para ghcr.io
+
+**URL:** https://github.com/settings/tokens → "Generate new token (classic)"
+
+```
+Note:       Leloir ghcr push
+Expiration: No expiration
+Scopes:     ✅ write:packages   ✅ read:packages   ✅ repo
+```
+
+Usarlo en dos lugares:
+1. **GitHub Actions secret** → https://github.com/villadalmine/leloir/settings/secrets/actions → `GHCR_PAT`
+2. **K8s pull secret** para que los pods puedan bajar la imagen (ver paso 4)
+
+#### D) OpenRouter API key
+
+**URL:** https://openrouter.ai/settings/keys → "Create Key"
+
+El valor va en `deploy/apps/holmesgpt/values.yaml`:
+```yaml
+additionalEnvVars:
+  - name: OPENAI_API_KEY
+    value: "sk-or-v1-XXXXXXXXX"
+```
+
+---
+
+#### Pasos para rebuild completo
+
+```bash
+# 1. Cluster vacío
+sudo ./scripts/cluster-up.sh
+
+# 2. ArgoCD
 kubectl create namespace argocd
 kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
-```
+kubectl wait --for=condition=available deployment/argocd-server -n argocd --timeout=120s
 
-**Paso 3 — Aplicar los apps de ArgoCD desde el repo**
-```bash
-# ArgoCD levanta todo lo demás solo via GitOps
-kubectl apply -f deploy/argocd-appset.yaml   # o el ApplicationSet que tengas
-```
-
-**Paso 4 — Recrear secrets (los únicos que no están en git)**
-
-```bash
-# Secret acme-dns para cert-manager (renovación TLS automática)
-# El archivo acme-dns-account.json está en la raíz del repo (gitignored)
-# Backupearlo en el password manager
+# 3. Secret acme-dns (necesario para que cert-manager emita certs)
+kubectl create namespace cert-manager
 kubectl create secret generic acme-dns-account \
   --namespace cert-manager \
-  --from-file=acme-dns-account.json \
+  --from-file=credentials.json=./acme-dns-account.json \
   --dry-run=client -o yaml | kubectl apply -f -
 
-# OAuth para ArgoCD (Dex) y Grafana
-./scripts/github-oauth-setup.sh
-# Pide: ArgoCD client ID/secret y Grafana client ID/secret
-# (los encontrás en https://github.com/settings/developers)
+# 4. OAuth secrets
+./scripts/github-oauth-setup.sh      # ArgoCD + Grafana
+./scripts/github-poc-oauth-setup.sh  # PoC
 
-# OAuth para el PoC (oauth2-proxy)
-./scripts/github-poc-oauth-setup.sh
-# Pide: PoC client ID/secret
-# (GitHub OAuth App: callback = https://poc.leloir.cybercirujas.club/oauth2/callback)
-
-# Pull secret para ghcr.io (imagen del PoC)
+# 5. Pull secret para imagen del PoC
+kubectl create namespace leloir-poc
 kubectl create secret docker-registry ghcr-pull-secret \
   --namespace leloir-poc \
   --docker-server=ghcr.io \
   --docker-username=villadalmine \
-  --docker-password=<TU_GHCR_PAT> \
+  --docker-password=<GHCR_PAT> \
   --dry-run=client -o yaml | kubectl apply -f -
 
-# API key de OpenRouter para HolmesGPT
-# (está en deploy/apps/holmesgpt/values.yaml como OPENAI_API_KEY)
-# Si fue borrado del values.yaml, consultar el password manager
-```
+# 6. Aplicar ApplicationSets → ArgoCD instala todo lo demás
+kubectl apply -f deploy/
 
-**Paso 5 — Rollout para que tomen los nuevos secrets**
-```bash
-kubectl rollout restart deployment -n argocd
-kubectl rollout restart deployment -n prometheus
-kubectl rollout restart deployment -n holmesgpt
-kubectl rollout restart deployment -n leloir-poc
+# 7. Esperar certs (~5 min)
+kubectl get certificates -A -w
 ```
 
 ---
@@ -180,26 +244,25 @@ kubectl rollout restart deployment -n leloir-poc
 ### Comandos útiles de diagnóstico
 
 ```bash
-# Ver estado general
-kubectl get pods -A | grep -v Running | grep -v Completed
+# Estado general (solo pods con problema)
+kubectl get pods -A | grep -Ev "Running|Completed"
 
-# Ver logs del PoC
+# Logs del PoC
 kubectl logs -n leloir-poc deploy/leloir-poc-leloir --tail=50 -f
 
-# Ver logs de HolmesGPT
+# Logs de HolmesGPT
 kubectl logs -n holmesgpt deploy/holmesgpt-holmes --tail=50 -f
 
-# Ver estado de certificados
+# Estado de certificados TLS
 kubectl get certificates -A
-kubectl get certificaterequests -A
 
-# Ver sync de ArgoCD
+# Sync de ArgoCD
 kubectl get applications -n argocd
 
-# Bajar el cluster (preserva estado)
+# Bajar el cluster (preserva estado del container)
 sudo ./scripts/cluster-up.sh --down
 
-# Ver estado del container k3s
+# Estado del container k3s
 sudo ./scripts/cluster-up.sh --status
 ```
 
