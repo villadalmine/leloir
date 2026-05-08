@@ -32,7 +32,7 @@ read -rsp "Client Secret: " CLIENT_SECRET; echo ""
 echo ""
 
 # Cookie secret: 32 bytes aleatorios en base64
-COOKIE_SECRET=$(openssl rand -base64 32 | head -c 32 | base64)
+COOKIE_SECRET=$(python3 -c "import secrets, base64; print(base64.b64encode(secrets.token_bytes(32)).decode())")
 
 echo "Generando cookie secret..."
 echo ""

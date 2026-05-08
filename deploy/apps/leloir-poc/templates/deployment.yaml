@@ -15,6 +15,10 @@ spec:
       labels:
         app: leloir-poc
     spec:
+      {{- if .Values.image.pullSecret }}
+      imagePullSecrets:
+        - name: {{ .Values.image.pullSecret }}
+      {{- end }}
       containers:
         - name: leloir-poc
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"

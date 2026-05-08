@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: leloir-poc-oauth2-proxy
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: leloir-poc-oauth2-proxy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: leloir-poc-oauth2-proxy
+  template:
+    metadata:
+      labels:
+        app: leloir-poc-oauth2-proxy
+    spec:
+      containers:
+        - name: oauth2-proxy
+          image: {{ .Values.oauth2proxy.image }}
+          args:
+            - --provider=github
+            - --upstream=http://leloir-poc:3001
+            - --http-address=0.0.0.0:4180
+            - --email-domain=*
+            - --cookie-secure=true
+            - --cookie-name=_leloir_poc
+            - --skip-provider-button=true
+            - --silence-ping-logging=true
+            - --redirect-url=https://{{ .Values.ingress.host }}/oauth2/callback
+          env:
+            - name: OAUTH2_PROXY_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: leloir-poc-oauth
+                  key: client-id
+            - name: OAUTH2_PROXY_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: leloir-poc-oauth
+                  key: client-secret
+            - name: OAUTH2_PROXY_COOKIE_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: leloir-poc-oauth
+                  key: cookie-secret
+          ports:
+            - containerPort: 4180
+          livenessProbe:
+            httpGet:
+              path: /ping
+              port: 4180
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          resources: {{ toYaml .Values.oauth2proxy.resources | nindent 12 }}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: leloir-poc-oauth2-proxy
+  namespace: {{ .Release.Namespace }}
+spec:
+  selector:
+    app: leloir-poc-oauth2-proxy
+  ports:
+    - port: 4180
+      targetPort: 4180

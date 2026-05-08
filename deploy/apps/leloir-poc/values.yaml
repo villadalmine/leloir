@@ -10,6 +10,7 @@ image:
   repository: ghcr.io/villadalmine/leloir-poc
   tag: latest
   pullPolicy: Always
+  # pullSecret: ghcr-pull-secret   # descomentar si el paquete es privado
 
 holmes:
   url: http://holmesgpt-holmes.holmesgpt:80
@@ -20,32 +21,14 @@ ingress:
   tlsSecret: leloir-poc-tls
 
 # ── oauth2-proxy ──────────────────────────────────────────────────────────────
+# Imagen oficial: quay.io/oauth2-proxy/oauth2-proxy
 # Secret requerido (creado por scripts/github-poc-oauth-setup.sh):
 #   kubectl create secret generic leloir-poc-oauth -n leloir-poc \
 #     --from-literal=client-id=<GITHUB_CLIENT_ID> \
 #     --from-literal=client-secret=<GITHUB_CLIENT_SECRET> \
 #     --from-literal=cookie-secret=<32-bytes-base64>
-oauth2-proxy:
-  configuration:
-    existingSecret: leloir-poc-oauth
-    content: |
-      provider = "github"
-      upstreams = [ "http://leloir-poc:3001" ]
-      email_domains = [ "*" ]
-      silence_ping_logging = true
-      skip_provider_button = true
-      pass_access_token = false
-      cookie_secure = true
-      cookie_name = "_leloir_poc_oauth"
-
-  service:
-    type: ClusterIP
-    port: 4180
-
-  # No exponer ingress propio — el ingress lo maneja el chart padre
-  ingress:
-    enabled: false
-
+oauth2proxy:
+  image: quay.io/oauth2-proxy/oauth2-proxy:latest
   resources:
     requests:
       memory: 64Mi
