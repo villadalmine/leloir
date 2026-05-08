@@ -5,6 +5,7 @@ metadata:
   namespace: argocd
 data:
   url: https://argocd.leloir.cybercirujas.club
+  admin.enabled: "false"
   dex.config: |
     connectors:
     - type: github
