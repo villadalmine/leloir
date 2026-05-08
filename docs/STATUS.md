@@ -85,6 +85,126 @@
 
 ---
 
+## 🖥️ Cómo prender todo desde cero (runbook)
+
+El cluster k3s corre dentro de un container `podman` en esta laptop.
+Cuando apagás la laptop, el container queda **parado pero no eliminado** — todo el estado de Kubernetes se preserva. ArgoCD y los Helm charts no necesitan reinstalarse.
+
+### Caso normal: reinicio de laptop / apagado y prendido
+
+```bash
+# 1. Levantar el cluster (desde fuera del toolbx, como root)
+sudo ./scripts/cluster-up.sh
+
+# 2. Verificar que todo levantó (puede tardar ~2 min)
+kubectl get pods -A
+```
+
+Eso es todo. ArgoCD detecta si hay cambios en git y sincroniza solo.
+
+### Verificar que los servicios públicos responden
+
+```bash
+curl -sI https://poc.leloir.cybercirujas.club | head -3
+curl -sI https://argocd.leloir.cybercirujas.club | head -3
+curl -sI https://grafana.leloir.cybercirujas.club | head -3
+```
+
+---
+
+### Caso excepcional: cluster destruido o máquina nueva
+
+Solo necesario si corriste `sudo ./scripts/cluster-up.sh --down` o si cambiás de máquina. Los secrets no están en git y hay que recrearlos.
+
+**Paso 1 — Levantar cluster limpio**
+```bash
+sudo ./scripts/cluster-up.sh
+```
+
+**Paso 2 — Instalar ArgoCD**
+```bash
+kubectl create namespace argocd
+kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+```
+
+**Paso 3 — Aplicar los apps de ArgoCD desde el repo**
+```bash
+# ArgoCD levanta todo lo demás solo via GitOps
+kubectl apply -f deploy/argocd-appset.yaml   # o el ApplicationSet que tengas
+```
+
+**Paso 4 — Recrear secrets (los únicos que no están en git)**
+
+```bash
+# Secret acme-dns para cert-manager (renovación TLS automática)
+# El archivo acme-dns-account.json está en la raíz del repo (gitignored)
+# Backupearlo en el password manager
+kubectl create secret generic acme-dns-account \
+  --namespace cert-manager \
+  --from-file=acme-dns-account.json \
+  --dry-run=client -o yaml | kubectl apply -f -
+
+# OAuth para ArgoCD (Dex) y Grafana
+./scripts/github-oauth-setup.sh
+# Pide: ArgoCD client ID/secret y Grafana client ID/secret
+# (los encontrás en https://github.com/settings/developers)
+
+# OAuth para el PoC (oauth2-proxy)
+./scripts/github-poc-oauth-setup.sh
+# Pide: PoC client ID/secret
+# (GitHub OAuth App: callback = https://poc.leloir.cybercirujas.club/oauth2/callback)
+
+# Pull secret para ghcr.io (imagen del PoC)
+kubectl create secret docker-registry ghcr-pull-secret \
+  --namespace leloir-poc \
+  --docker-server=ghcr.io \
+  --docker-username=villadalmine \
+  --docker-password=<TU_GHCR_PAT> \
+  --dry-run=client -o yaml | kubectl apply -f -
+
+# API key de OpenRouter para HolmesGPT
+# (está en deploy/apps/holmesgpt/values.yaml como OPENAI_API_KEY)
+# Si fue borrado del values.yaml, consultar el password manager
+```
+
+**Paso 5 — Rollout para que tomen los nuevos secrets**
+```bash
+kubectl rollout restart deployment -n argocd
+kubectl rollout restart deployment -n prometheus
+kubectl rollout restart deployment -n holmesgpt
+kubectl rollout restart deployment -n leloir-poc
+```
+
+---
+
+### Comandos útiles de diagnóstico
+
+```bash
+# Ver estado general
+kubectl get pods -A | grep -v Running | grep -v Completed
+
+# Ver logs del PoC
+kubectl logs -n leloir-poc deploy/leloir-poc-leloir --tail=50 -f
+
+# Ver logs de HolmesGPT
+kubectl logs -n holmesgpt deploy/holmesgpt-holmes --tail=50 -f
+
+# Ver estado de certificados
+kubectl get certificates -A
+kubectl get certificaterequests -A
+
+# Ver sync de ArgoCD
+kubectl get applications -n argocd
+
+# Bajar el cluster (preserva estado)
+sudo ./scripts/cluster-up.sh --down
+
+# Ver estado del container k3s
+sudo ./scripts/cluster-up.sh --status
+```
+
+---
+
 ## 🔍 Hallazgos técnicos de M0 (input para M1)
 
 ### Sobre la API de HolmesGPT (`/api/chat`)
