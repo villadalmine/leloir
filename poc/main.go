@@ -20,7 +20,7 @@ var staticFiles embed.FS
 // ── Config ────────────────────────────────────────────────────────────────────
 
 var holmesURL = getenv("HOLMES_URL", "http://holmesgpt-holmes.holmesgpt:80")
-var holmesModel = getenv("HOLMES_MODEL", "gemma4-31b")
+var holmesModel = getenv("HOLMES_MODEL", "nemotron-super")
 var listenAddr = getenv("LISTEN_ADDR", ":3001")
 
 func getenv(key, def string) string {
