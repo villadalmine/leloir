@@ -18,6 +18,8 @@ holmes:
           key: openrouter-api-key
     - name: OVERRIDE_MAX_OUTPUT_TOKEN
       value: "4096"
+    - name: OVERRIDE_MAX_CONTENT_SIZE
+      value: "128000"
 
   modelList:
     # Modelos free con distintos providers para evitar rate limit simultáneo
