@@ -1,0 +1,10 @@
+apiVersion: v2
+name: holmesgpt
+description: HolmesGPT — agentic incident analysis para Leloir PoC
+type: application
+version: 1.0.0
+
+dependencies:
+  - name: holmes
+    version: "*"
+    repository: https://robusta-charts.storage.googleapis.com

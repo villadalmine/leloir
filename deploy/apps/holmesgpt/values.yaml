@@ -1,0 +1,27 @@
+# values.yaml — HolmesGPT para Leloir PoC
+# LLM: OpenRouter con modelos gratuitos (Qwen3 80B)
+# Secret: kubectl create secret generic holmes-secrets \
+#           --from-literal=openrouter-api-key="sk-or-..." \
+#           -n holmesgpt
+
+holmes:
+  additionalEnvVars:
+    - name: OPENROUTER_API_KEY
+      valueFrom:
+        secretKeyRef:
+          name: holmes-secrets
+          key: openrouter-api-key
+
+  modelList:
+    qwen3-80b:
+      api_key: "{{ env.OPENROUTER_API_KEY }}"
+      model: openrouter/qwen/qwen3-80b:free
+      temperature: 0
+
+    nemotron-super:
+      api_key: "{{ env.OPENROUTER_API_KEY }}"
+      model: openrouter/nvidia/nemotron-3-super-120b-a12b:free
+      temperature: 0
+
+  config:
+    model: "qwen3-80b"
