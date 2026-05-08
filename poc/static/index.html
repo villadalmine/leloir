@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Leloir PoC</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #0f1117;
+      color: #e2e8f0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      padding: 20px 32px;
+      border-bottom: 1px solid #1e2533;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    header h1 {
+      font-size: 1.25rem;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+    }
+
+    .badge {
+      font-size: 0.65rem;
+      background: #1a3a5c;
+      color: #60a5fa;
+      border: 1px solid #2563eb44;
+      padding: 2px 8px;
+      border-radius: 99px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    #status-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #4b5563;
+      transition: background 0.3s;
+      flex-shrink: 0;
+    }
+    #status-dot.connected { background: #22c55e; box-shadow: 0 0 6px #22c55e88; }
+    #status-dot.error     { background: #ef4444; }
+
+    main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      padding: 24px 32px;
+      gap: 20px;
+      max-width: 960px;
+      width: 100%;
+      margin: 0 auto;
+    }
+
+    .ask-box {
+      display: flex;
+      gap: 10px;
+    }
+
+    .ask-box input {
+      flex: 1;
+      background: #1a1f2e;
+      border: 1px solid #2d3748;
+      border-radius: 8px;
+      padding: 10px 16px;
+      color: #e2e8f0;
+      font-size: 0.95rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .ask-box input:focus { border-color: #3b82f6; }
+    .ask-box input::placeholder { color: #4b5563; }
+
+    .ask-box button {
+      background: #2563eb;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 10px 22px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+      white-space: nowrap;
+    }
+    .ask-box button:hover { background: #1d4ed8; }
+    .ask-box button:disabled { background: #1e3a6e; color: #4b5563; cursor: not-allowed; }
+
+    #events {
+      flex: 1;
+      background: #111827;
+      border: 1px solid #1e2533;
+      border-radius: 10px;
+      padding: 16px;
+      overflow-y: auto;
+      min-height: 400px;
+      max-height: 60vh;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .event {
+      display: flex;
+      gap: 10px;
+      padding: 8px 10px;
+      border-radius: 6px;
+      font-size: 0.875rem;
+      line-height: 1.5;
+      animation: fadeIn 0.2s ease;
+    }
+
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; } }
+
+    .event .ts { color: #4b5563; font-size: 0.75rem; flex-shrink: 0; padding-top: 2px; }
+    .event .text { flex: 1; white-space: pre-wrap; word-break: break-word; }
+
+    .event.connected { background: #0a2d1a; color: #4ade80; }
+    .event.info      { background: #0d1f38; color: #93c5fd; }
+    .event.answer    { background: #1a1200; color: #fde68a; border-left: 3px solid #f59e0b; }
+    .event.error     { background: #2d0f0f; color: #fca5a5; }
+
+    .empty-state {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #374151;
+      font-size: 0.875rem;
+      text-align: center;
+      gap: 8px;
+    }
+
+    footer {
+      padding: 12px 32px;
+      border-top: 1px solid #1e2533;
+      font-size: 0.75rem;
+      color: #374151;
+      display: flex;
+      gap: 20px;
+    }
+    footer a { color: #4b5563; text-decoration: none; }
+    footer a:hover { color: #60a5fa; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div id="status-dot"></div>
+  <h1>Leloir PoC</h1>
+  <span class="badge">M0</span>
+</header>
+
+<main>
+  <div class="ask-box">
+    <input id="question" type="text"
+      placeholder="Preguntale a Holmes: ¿hay pods con crash loops? ¿qué alerts están firing?"
+      autocomplete="off" />
+    <button id="ask-btn" onclick="ask()">Investigar</button>
+  </div>
+
+  <div id="events">
+    <div class="empty-state" id="empty">Conectando con Holmes...</div>
+  </div>
+</main>
+
+<footer>
+  <span>Holmes: <a href="#" id="holmes-model">qwen3-80b</a></span>
+  <span>Endpoints: <code>/webhook</code> (Alertmanager) · <code>/ask</code> (API) · <code>/events</code> (SSE)</span>
+</footer>
+
+<script>
+  const eventsEl = document.getElementById('events');
+  const emptyEl  = document.getElementById('empty');
+  const dot      = document.getElementById('status-dot');
+  const input    = document.getElementById('question');
+  const btn      = document.getElementById('ask-btn');
+
+  function addEvent(type, text, ts) {
+    if (emptyEl) emptyEl.remove();
+    const div = document.createElement('div');
+    div.className = 'event ' + (type || '');
+    div.innerHTML = `<span class="ts">${ts || ''}</span><span class="text">${escHtml(text)}</span>`;
+    eventsEl.appendChild(div);
+    eventsEl.scrollTop = eventsEl.scrollHeight;
+  }
+
+  function escHtml(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  // SSE
+  function connect() {
+    const src = new EventSource('/events');
+    src.onmessage = (e) => {
+      const d = JSON.parse(e.data);
+      addEvent(d.type, d.text, d.time);
+      if (d.type === 'connected') {
+        dot.className = 'connected';
+      }
+      if (d.type === 'answer' || d.type === 'error') {
+        btn.disabled = false;
+        btn.textContent = 'Investigar';
+      }
+    };
+    src.onerror = () => {
+      dot.className = 'error';
+      setTimeout(connect, 3000);
+    };
+  }
+  connect();
+
+  // Manual ask
+  async function ask() {
+    const q = input.value.trim();
+    if (!q) return;
+    btn.disabled = true;
+    btn.textContent = 'Investigando…';
+    try {
+      await fetch('/ask', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({question: q}),
+      });
+      input.value = '';
+    } catch(err) {
+      addEvent('error', 'No se pudo conectar al servidor: ' + err.message, '');
+      btn.disabled = false;
+      btn.textContent = 'Investigar';
+    }
+  }
+
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') ask(); });
+</script>
+
+</body>
+</html>

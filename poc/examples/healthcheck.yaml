@@ -1,0 +1,31 @@
+# HealthCheck one-shot — se ejecuta una sola vez al hacer kubectl apply
+# kubectl apply -f poc/examples/healthcheck.yaml
+# kubectl get hc -w          (esperar READY=True)
+# kubectl describe hc cluster-health
+apiVersion: holmesgpt.dev/v1alpha1
+kind: HealthCheck
+metadata:
+  name: cluster-health
+  namespace: holmesgpt
+spec:
+  query: >
+    Are there any unhealthy pods, recent OOMKills, CrashLoopBackoffs, or
+    firing Prometheus alerts in the cluster? Summarize findings and
+    recommend actions if needed.
+  timeout: 120
+
+---
+# ScheduledHealthCheck — corre cada hora y guarda historial
+# kubectl apply -f poc/examples/healthcheck.yaml
+# kubectl get scheduledhealthcheck -n holmesgpt
+apiVersion: holmesgpt.dev/v1alpha1
+kind: ScheduledHealthCheck
+metadata:
+  name: cluster-hourly
+  namespace: holmesgpt
+spec:
+  schedule: "0 * * * *"
+  query: >
+    Hourly cluster check: any pods crashing, high resource usage,
+    or Prometheus alerts firing? Report status and severity.
+  timeout: 120

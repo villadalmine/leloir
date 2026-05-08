@@ -4,6 +4,7 @@ dist/
 *.test
 *.out
 vendor/
+poc/poc
 
 # IDE
 .idea/
@@ -23,7 +24,6 @@ kubeconfig
 
 # Private — documentación personal, planes, milestones (quedan solo en local)
 docs/
-poc/
 
 # Claude Code — memoria y settings locales
 .claude/
