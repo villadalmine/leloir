@@ -7,6 +7,31 @@ kube-prometheus-stack:
     adminPassword: "leloir-poc"
     service:
       type: ClusterIP
+
+    # GitHub OAuth — secret creado por scripts/github-oauth-setup.sh (no está en git)
+    envValueFrom:
+      GF_AUTH_GITHUB_CLIENT_ID:
+        secretKeyRef:
+          name: grafana-github-oauth
+          key: client-id
+      GF_AUTH_GITHUB_CLIENT_SECRET:
+        secretKeyRef:
+          name: grafana-github-oauth
+          key: client-secret
+
+    grafana.ini:
+      auth.github:
+        enabled: true
+        allow_sign_up: true
+        scopes: user:email,read:org
+        auth_url: https://github.com/login/oauth/authorize
+        token_url: https://github.com/login/oauth/access_token
+        api_url: https://api.github.com/user
+        client_id: $__env{GF_AUTH_GITHUB_CLIENT_ID}
+        client_secret: $__env{GF_AUTH_GITHUB_CLIENT_SECRET}
+        # villadalmine → Admin, cualquier otro GitHub user → Viewer
+        role_attribute_path: "contains(['villadalmine'], login) && 'Admin' || 'Viewer'"
+
     ingress:
       enabled: true
       ingressClassName: nginx

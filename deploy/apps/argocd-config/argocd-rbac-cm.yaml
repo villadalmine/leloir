@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-rbac-cm
+  namespace: argocd
+data:
+  # Solo villadalmine tiene acceso admin. Cualquier otro GitHub user que se autentique
+  # no tiene permisos (policy.default vacío = sin acceso).
+  policy.csv: |
+    g, villadalmine, role:admin
+  policy.default: role:
