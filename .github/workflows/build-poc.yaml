@@ -11,15 +11,30 @@ jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       packages: write
     steps:
       - uses: actions/checkout@v4.2.2
+        with:
+          token: ${{ secrets.GHCR_PAT }}
 
       - name: Log in to ghcr.io
         run: echo "${{ secrets.GHCR_PAT }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
       - name: Build and push
         run: |
-          docker build -t ghcr.io/villadalmine/leloir-poc:latest ./poc
+          SHA="${{ github.sha }}"
+          TAG="sha-${SHA::7}"
+          docker build -t ghcr.io/villadalmine/leloir-poc:${TAG} -t ghcr.io/villadalmine/leloir-poc:latest ./poc
+          docker push ghcr.io/villadalmine/leloir-poc:${TAG}
           docker push ghcr.io/villadalmine/leloir-poc:latest
+          echo "IMAGE_TAG=${TAG}" >> $GITHUB_ENV
+
+      - name: Update image tag in values.yaml
+        run: |
+          sed -i "s|tag: sha-[a-f0-9]*\|tag: latest|tag: $IMAGE_TAG|" deploy/apps/leloir-poc/values.yaml
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add deploy/apps/leloir-poc/values.yaml
+          git diff --cached --quiet || git commit -m "ci(poc): update image tag to $IMAGE_TAG [skip ci]"
+          git push
