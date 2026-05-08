@@ -192,9 +192,11 @@ func handleSSE(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+var staticDir = getenv("STATIC_DIR", "static")
+
 // GET / — servir UI estática
 func handleUI(w http.ResponseWriter, r *http.Request) {
-	http.ServeFile(w, r, "static/index.html")
+	http.ServeFile(w, r, staticDir+"/index.html")
 }
 
 // GET /health

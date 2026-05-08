@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: leloir-poc
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: leloir-poc
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: leloir-poc
+  template:
+    metadata:
+      labels:
+        app: leloir-poc
+    spec:
+      containers:
+        - name: poc
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: 8080
+          env:
+            - name: LISTEN_ADDR
+              value: ":8080"
+            - name: STATIC_DIR
+              value: "/static"
+            - name: HOLMES_URL
+              value: {{ .Values.holmesURL | quote }}
+            - name: HOLMES_MODEL
+              value: {{ .Values.holmesModel | quote }}
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}

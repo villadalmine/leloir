@@ -1,0 +1,27 @@
+# values.yaml — Leloir PoC
+#
+# Antes de que ArgoCD pueda desplegar esto, la imagen debe existir en el registry:
+#   cd poc && make push          (sube a ghcr.io)
+#   cd poc && make import        (importa directo en k3s sin registry)
+
+image:
+  repository: ghcr.io/villadalmine/leloir-poc
+  tag: latest
+  pullPolicy: Always
+
+# URL interna del servicio Holmes dentro del cluster
+holmesURL: "http://holmesgpt-holmes.holmesgpt.svc.cluster.local"
+holmesModel: "qwen3-80b"
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8080
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 32Mi
+  limits:
+    cpu: 200m
+    memory: 128Mi

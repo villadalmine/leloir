@@ -1,0 +1,6 @@
+apiVersion: v2
+name: leloir-poc
+description: Leloir PoC — webhook receiver + SSE stream + UI
+type: application
+version: 0.1.0
+appVersion: "latest"
