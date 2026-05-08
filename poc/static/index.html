@@ -200,15 +200,17 @@
     return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   }
 
-  // SSE
+  // SSE — una sola conexión activa a la vez
+  let sseConn = null;
   function connect() {
+    if (sseConn) { sseConn.close(); sseConn = null; }
     const src = new EventSource('/events');
+    sseConn = src;
     src.onmessage = (e) => {
+      if (src !== sseConn) { src.close(); return; } // conexión obsoleta
       const d = JSON.parse(e.data);
       addEvent(d.type, d.text, d.time);
-      if (d.type === 'connected') {
-        dot.className = 'connected';
-      }
+      if (d.type === 'connected') dot.className = 'connected';
       if (d.type === 'answer' || d.type === 'error') {
         btn.disabled = false;
         btn.textContent = 'Investigar';
@@ -216,15 +218,19 @@
     };
     src.onerror = () => {
       dot.className = 'error';
+      src.close();
+      if (src === sseConn) sseConn = null;
       setTimeout(connect, 3000);
     };
   }
   connect();
 
-  // Manual ask
+  // Manual ask — protección contra doble submit
+  let asking = false;
   async function ask() {
     const q = input.value.trim();
-    if (!q) return;
+    if (!q || asking) return;
+    asking = true;
     btn.disabled = true;
     btn.textContent = 'Investigando…';
     try {
@@ -238,6 +244,8 @@
       addEvent('error', 'No se pudo conectar al servidor: ' + err.message, '');
       btn.disabled = false;
       btn.textContent = 'Investigar';
+    } finally {
+      asking = false;
     }
   }
 
