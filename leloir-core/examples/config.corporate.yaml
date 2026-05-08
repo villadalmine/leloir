@@ -1,0 +1,57 @@
+# Leloir Control Plane — Corporate Config
+# =========================================
+# Production-ready enterprise configuration.
+# Secrets should come from Kubernetes Secrets mounted at the referenced paths,
+# typically synced from Vault via External Secrets Operator.
+
+profile: corporate
+
+api:
+  httpAddr: ":8080"
+  grpcAddr: ":9090"
+
+database:
+  driver: postgres
+  # DSN from secret (mounted at /var/run/secrets/leloir/database-dsn)
+  dsn: ""   # loaded at startup from env or secret
+
+auth:
+  mode: oidc
+  oidc:
+    issuer: "https://login.microsoftonline.com/YOUR-TENANT-ID/v2.0"
+    clientId: "YOUR-APP-CLIENT-ID"
+    clientSecret: ""   # loaded from secret
+    scopes: [openid, profile, email]
+    groupsClaim: groups
+
+llmGateway:
+  enabled: true
+  endpoint: "http://llmgateway.leloir.svc.cluster.local:8080"
+
+mcpGateway:
+  endpoint: "http://mcpgateway.leloir.svc.cluster.local:8080"
+
+audit:
+  hotRetentionDays: 90         # minimum for corporate; enforced in config validation
+  warmStorage:
+    enabled: true
+    bucket: "s3://your-audit-bucket/leloir/"
+    retentionDays: 365
+  hashChain:
+    enabled: true
+  worm:
+    enabled: false             # enable when compliance regime is confirmed
+
+observability:
+  otlp:
+    enabled: true
+    endpoint: "http://otel-collector.observability:4317"
+  metrics:
+    enabled: true
+    addr: ":9091"
+  serviceName: leloir-controlplane
+  environment: production
+
+kubernetes:
+  enabled: true                # watch CRDs, reconcile state
+  kubeconfig: ""               # empty = in-cluster config

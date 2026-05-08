@@ -1,0 +1,21 @@
+# Go
+bin/
+dist/
+*.test
+*.out
+vendor/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Env
+.env
+*.env.local
+
+# OS
+.DS_Store
+
+# k8s / helm
+*.kubeconfig

@@ -1,0 +1,46 @@
+# Leloir Control Plane — Local Dev Config
+# =========================================
+# Use this for M0 PoC + local development.
+# For production, see config.corporate.yaml.
+
+profile: local
+
+api:
+  httpAddr: ":8080"
+
+database:
+  driver: memory          # in-memory, non-persistent — perfect for M0
+  # driver: postgres
+  # dsn: postgres://leloir:leloir@localhost:5432/leloir?sslmode=disable
+
+auth:
+  mode: single-user       # skip OIDC for local dev
+  singleUser:
+    username: developer
+
+llmGateway:
+  enabled: false          # M1+ — for now, adapters talk directly to Anthropic
+
+mcpGateway:
+  endpoint: "http://localhost:8082"
+
+audit:
+  hotRetentionDays: 7
+  warmStorage:
+    enabled: false
+  hashChain:
+    enabled: false
+  worm:
+    enabled: false
+
+observability:
+  otlp:
+    enabled: false
+  metrics:
+    enabled: true
+    addr: ":9091"
+  serviceName: leloir-controlplane
+  environment: local
+
+kubernetes:
+  enabled: false          # M2+ — M0 doesn't need CRD reconciliation
