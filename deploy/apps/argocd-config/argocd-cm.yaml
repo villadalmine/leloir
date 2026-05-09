@@ -11,15 +11,7 @@ data:
   # Sin esto, ArgoCD usa el sub opaco de Dex (ej. CgcxMDcwMTg0EgZnaXRodWI) y
   # los g, villadalmine, role:admin del rbac-cm nunca matchean.
   oidc.config: |
-    requestedScopes:
-      - openid
-      - profile
-      - email
-    requestedIDTokenClaims:
-      preferred_username:
-        essential: true
-      email:
-        essential: true
+    usernameClaim: preferred_username
   dex.config: |
     connectors:
     - type: github
