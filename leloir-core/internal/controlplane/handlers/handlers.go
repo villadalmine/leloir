@@ -20,8 +20,13 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
+	"strconv"
+	"time"
 
+	sdkadapter "github.com/leloir/sdk/adapter"
 	"github.com/gorilla/mux"
 	"github.com/leloir/leloir/internal/controlplane/audit"
 	"github.com/leloir/leloir/internal/controlplane/orchestrator"
@@ -82,7 +87,23 @@ func NewRouter(deps Deps) http.Handler {
 	return r
 }
 
-// ─── Handlers (skeletons — M1 fills these in) ────────────────────────────────
+// ─── alertPayload — the normalized alert format POSTed to /api/v1/alerts ──────
+//
+// This is the internal format produced by the webhook receiver. It can also be
+// POSTed directly for testing (no Alertmanager required).
+
+type alertPayload struct {
+	Source      string            `json:"source"`      // e.g. "alertmanager"
+	SourceID    string            `json:"sourceID"`    // fingerprint or ID
+	Severity    string            `json:"severity"`    // "critical", "warning", "info"
+	Title       string            `json:"title"`       // alertname
+	Description string            `json:"description"` // summary annotation
+	Labels      map[string]string `json:"labels"`
+	Annotations map[string]string `json:"annotations"`
+	FiredAt     int64             `json:"firedAt"` // unix seconds
+}
+
+// ─── Handlers ─────────────────────────────────────────────────────────────────
 
 func healthHandler(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
@@ -90,29 +111,133 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 
 func readyHandlerBuilder(deps Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// M1: check store connectivity and registry status
-		writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
+		agents := deps.Registry.List()
+		if len(agents) == 0 {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+				"status": "no agents registered",
+			})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"status": "ready",
+			"agents": len(agents),
+		})
 	}
 }
 
 func ingestAlertHandler(deps Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// M1: parse alert, call router, kick off orchestrator
-		w.WriteHeader(http.StatusNotImplemented)
+		var payload alertPayload
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			http.Error(w, fmt.Sprintf("invalid alert payload: %v", err), http.StatusBadRequest)
+			return
+		}
+		if payload.Title == "" && payload.Source == "" {
+			http.Error(w, "alert must have at least source and title", http.StatusBadRequest)
+			return
+		}
+
+		tenantID := TenantFromContext(r.Context())
+
+		alert := routing.Alert{
+			ID:          fmt.Sprintf("alert-%d", time.Now().UnixNano()),
+			TenantID:    tenantID,
+			Source:      payload.Source,
+			SourceID:    payload.SourceID,
+			Severity:    payload.Severity,
+			Title:       payload.Title,
+			Description: payload.Description,
+			Labels:      payload.Labels,
+			Annotations: payload.Annotations,
+			FiredAt:     payload.FiredAt * 1000, // seconds → millis
+		}
+
+		match, err := deps.Router.Resolve(r.Context(), alert)
+		if err != nil {
+			if errors.Is(err, routing.ErrNoMatchingRoute) {
+				writeJSON(w, http.StatusUnprocessableEntity, map[string]string{
+					"error": "no matching AlertRoute for this alert",
+				})
+				return
+			}
+			http.Error(w, fmt.Sprintf("routing error: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		deadline := time.Now().Add(10 * time.Minute)
+		if match.TimeoutMinutes > 0 {
+			deadline = time.Now().Add(time.Duration(match.TimeoutMinutes) * time.Minute)
+		}
+
+		firedAt := time.Unix(payload.FiredAt, 0).UTC()
+		if payload.FiredAt == 0 {
+			firedAt = time.Now().UTC()
+		}
+
+		invID, err := deps.Orchestrator.StartInvestigation(r.Context(), orchestrator.StartRequest{
+			TenantID:  tenantID,
+			AgentName: match.Agent.Name,
+			AlertContext: sdkadapter.AlertContext{
+				Source:      payload.Source,
+				SourceID:    payload.SourceID,
+				Severity:    payload.Severity,
+				Title:       payload.Title,
+				Description: payload.Description,
+				Labels:      payload.Labels,
+				Annotations: payload.Annotations,
+				FiredAt:     firedAt,
+			},
+			Budget: sdkadapter.Budget{
+				MaxTokens:    match.BudgetTokens,
+				MaxUSD:       match.BudgetUSD,
+				MaxToolCalls: int(match.Route.BudgetMaxToolCalls),
+			},
+			Deadline: deadline,
+			CallerContext: sdkadapter.CallerContext{
+				Type:        "alert",
+				UserSubject: UserFromContext(r.Context()),
+			},
+		})
+		if err != nil {
+			http.Error(w, fmt.Sprintf("start investigation: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		writeJSON(w, http.StatusAccepted, map[string]string{
+			"investigation_id": invID,
+			"agent":            match.Agent.Name,
+			"stream":           fmt.Sprintf("/api/v1/investigations/%s/stream", invID),
+		})
 	}
 }
 
 func listInvestigationsHandler(deps Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// M1: query store.ListInvestigations with tenant scope + pagination
-		w.WriteHeader(http.StatusNotImplemented)
+		tenantID := TenantFromContext(r.Context())
+		limit := parseIntParam(r, "limit", 50)
+		offset := parseIntParam(r, "offset", 0)
+
+		invs, err := deps.Store.ListInvestigations(r.Context(), tenantID, limit, offset)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("list investigations: %v", err), http.StatusInternalServerError)
+			return
+		}
+		if invs == nil {
+			invs = []*store.Investigation{}
+		}
+		writeJSON(w, http.StatusOK, invs)
 	}
 }
 
 func getInvestigationHandler(deps Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// M1: fetch one investigation with events
-		w.WriteHeader(http.StatusNotImplemented)
+		vars := mux.Vars(r)
+		inv, err := deps.Store.GetInvestigation(r.Context(), vars["id"])
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		writeJSON(w, http.StatusOK, inv)
 	}
 }
 
@@ -120,15 +245,18 @@ func streamInvestigationHandler(deps Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
 		investigationID := vars["id"]
-		// M1: subscribe to broker, stream via SSE
 		deps.Broker.Stream(r.Context(), investigationID, w)
 	}
 }
 
 func cancelInvestigationHandler(deps Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// M1: call orchestrator.Cancel(investigationID)
-		w.WriteHeader(http.StatusNotImplemented)
+		vars := mux.Vars(r)
+		if err := deps.Orchestrator.Cancel(vars["id"]); err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"status": "cancelled"})
 	}
 }
 
@@ -153,15 +281,23 @@ func getAgentHandler(deps Deps) http.HandlerFunc {
 
 func listRoutesHandler(deps Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// M1: return AlertRoutes with stats
-		w.WriteHeader(http.StatusNotImplemented)
+		tenantID := TenantFromContext(r.Context())
+		routes, err := deps.Store.ListAlertRoutes(r.Context(), tenantID)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("list routes: %v", err), http.StatusInternalServerError)
+			return
+		}
+		if routes == nil {
+			routes = []*store.AlertRoute{}
+		}
+		writeJSON(w, http.StatusOK, routes)
 	}
 }
 
 func listMCPServersHandler(deps Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// M1: return MCPServers with health status
-		w.WriteHeader(http.StatusNotImplemented)
+		writeJSON(w, http.StatusOK, []any{})
 	}
 }
 
@@ -178,4 +314,16 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(body)
+}
+
+func parseIntParam(r *http.Request, key string, def int) int {
+	s := r.URL.Query().Get(key)
+	if s == "" {
+		return def
+	}
+	v, err := strconv.Atoi(s)
+	if err != nil {
+		return def
+	}
+	return v
 }

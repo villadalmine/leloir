@@ -12,6 +12,7 @@
 package webhook
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -148,14 +149,12 @@ func (r *Receiver) forward(ctx context.Context, alert map[string]any) error {
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		r.cfg.ForwardTo+"/api/v1/alerts", nil)
+		r.cfg.ForwardTo+"/api/v1/alerts", bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.ContentLength = int64(len(body))
-	// body: bytes.NewReader(body)   (wire up in M1)
-	_ = body // silenced
 
 	resp, err := r.httpClient.Do(req)
 	if err != nil {

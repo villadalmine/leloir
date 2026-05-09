@@ -302,18 +302,27 @@ func (o *Orchestrator) markInvestigationComplete(invCtx *InvestigationContext, e
 		"total_cost_usd", cp.TotalCost,
 		"duration_ms", time.Since(invCtx.Started).Milliseconds(),
 	)
-	// M1: update Investigation row with final status
-	// M1: send notifications via configured channels
+	_ = o.cfg.Store.UpdateInvestigationStatus(
+		context.Background(), invCtx.ID, "completed", string(cp.Outcome),
+	)
 }
 
 func (o *Orchestrator) markInvestigationFailed(id string, err error) {
 	slog.Error("investigation failed", "investigation_id", id, "error", err)
-	// M1: update DB row with error status
+	_ = o.cfg.Store.UpdateInvestigationStatus(
+		context.Background(), id, "failed", err.Error(),
+	)
 }
 
 func (o *Orchestrator) markInvestigationCancelled(id string, err error) {
-	slog.Info("investigation cancelled", "investigation_id", id, "reason", err)
-	// M1: update DB row
+	reason := "cancelled"
+	if err != nil {
+		reason = err.Error()
+	}
+	slog.Info("investigation cancelled", "investigation_id", id, "reason", reason)
+	_ = o.cfg.Store.UpdateInvestigationStatus(
+		context.Background(), id, "cancelled", reason,
+	)
 }
 
 // StartRequest is the input to StartInvestigation.
