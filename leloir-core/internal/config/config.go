@@ -46,6 +46,52 @@ type ControlPlaneConfig struct {
 		Enabled    bool   `yaml:"enabled"`
 		Kubeconfig string `yaml:"kubeconfig"` // empty = in-cluster
 	} `yaml:"kubernetes"`
+
+	// Agents lists adapter instances to register at startup.
+	// For M1, adapters are compiled-in Go types. M5+ adds sidecar gRPC adapters.
+	Agents []AgentConfig `yaml:"agents"`
+
+	// Routes seeds alert routes into the store at startup.
+	// For M1 (memory store), routes must be declared here.
+	// For M2+ (Postgres), this is optional — routes are managed via CRDs.
+	Routes []RouteConfig `yaml:"routes"`
+}
+
+// AgentConfig describes one adapter instance to register at startup.
+type AgentConfig struct {
+	// Name is the unique identifier for this agent instance, e.g. "holmesgpt".
+	Name string `yaml:"name"`
+	// Type is the adapter type to instantiate, e.g. "holmesgpt", "minimal".
+	Type string `yaml:"type"`
+	// TenantID scopes this agent. Defaults to "default".
+	TenantID string `yaml:"tenantID"`
+	// ModelConfig describes which LLM the agent should use.
+	// For HolmesGPT in M1 (no LLM Gateway), only Model is used (as the Holmes model alias).
+	ModelConfig AgentModelConfig `yaml:"modelConfig"`
+	// Custom is adapter-specific config (passed as CustomConfig to the adapter).
+	Custom map[string]any `yaml:"custom"`
+}
+
+// AgentModelConfig is the LLM config fragment inside AgentConfig.
+type AgentModelConfig struct {
+	Provider string `yaml:"provider"`
+	Model    string `yaml:"model"`    // e.g. "gemma4-31b" (Holmes model alias for M1)
+	Endpoint string `yaml:"endpoint"` // LLM Gateway endpoint (M3+)
+	APIKey   string `yaml:"apiKey"`   // passed to LLM Gateway (M3+)
+}
+
+// RouteConfig declares one AlertRoute seeded at startup.
+type RouteConfig struct {
+	Name            string            `yaml:"name"`
+	TenantID        string            `yaml:"tenantID"` // defaults to "default"
+	Enabled         bool              `yaml:"enabled"`
+	Priority        int32             `yaml:"priority"`
+	MatchLabels     map[string]string `yaml:"matchLabels"`  // empty = match all
+	MatchSources    []string          `yaml:"matchSources"` // empty = match all sources
+	AgentName       string            `yaml:"agentName"`
+	BudgetMaxUSD    float64           `yaml:"budgetMaxUSD"`
+	BudgetMaxTokens int64             `yaml:"budgetMaxTokens"`
+	TimeoutMinutes  int32             `yaml:"timeoutMinutes"` // defaults to 10
 }
 
 // AuthConfig covers OIDC setup.

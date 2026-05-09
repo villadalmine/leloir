@@ -20,6 +20,9 @@ import (
 	"sync"
 	"time"
 
+	sdkadapter "github.com/leloir/sdk/adapter"
+	"github.com/leloir/sdk/examples/holmesgpt"
+	"github.com/leloir/sdk/examples/minimal"
 	"github.com/leloir/leloir/internal/config"
 	"github.com/leloir/leloir/internal/controlplane/audit"
 	"github.com/leloir/leloir/internal/controlplane/handlers"
@@ -70,13 +73,20 @@ func New(cfg *config.ControlPlaneConfig) (*Server, error) {
 
 	// Orchestrator (runs an investigation end-to-end)
 	orch := orchestrator.New(orchestrator.Config{
-		Registry:         reg,
-		Store:            st,
-		Audit:            aud,
-		Broker:           br,
-		MCPGatewayURL:    cfg.MCPGateway.Endpoint,
-		LLMGatewayURL:    cfg.LLMGateway.Endpoint,
+		Registry:      reg,
+		Store:         st,
+		Audit:         aud,
+		Broker:        br,
+		MCPGatewayURL: cfg.MCPGateway.Endpoint,
+		LLMGatewayURL: cfg.LLMGateway.Endpoint,
 	})
+
+	// Register adapters and seed routes from config
+	setupCtx, setupCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer setupCancel()
+	if err := setupAgentsAndRoutes(setupCtx, cfg, reg, st); err != nil {
+		return nil, fmt.Errorf("setup agents/routes: %w", err)
+	}
 
 	// HTTP handlers
 	mux := handlers.NewRouter(handlers.Deps{
@@ -174,4 +184,82 @@ func (s *Server) Run(ctx context.Context) error {
 	}
 
 	return ctx.Err()
+}
+
+// ─── Adapter registration ────────────────────────────────────────────────────
+
+// setupAgentsAndRoutes registers adapters declared in cfg.Agents and seeds
+// alert routes declared in cfg.Routes into the store.
+func setupAgentsAndRoutes(ctx context.Context, cfg *config.ControlPlaneConfig, reg *registry.AgentRegistry, st store.Store) error {
+	for _, ac := range cfg.Agents {
+		a, err := newAdapter(ac.Type)
+		if err != nil {
+			return fmt.Errorf("agent %q: %w", ac.Name, err)
+		}
+
+		tenantID := ac.TenantID
+		if tenantID == "" {
+			tenantID = "default"
+		}
+
+		adapterCfg := sdkadapter.Config{
+			TenantID: tenantID,
+			ModelConfig: sdkadapter.ModelConfig{
+				Provider: ac.ModelConfig.Provider,
+				Model:    ac.ModelConfig.Model,
+				Endpoint: ac.ModelConfig.Endpoint,
+				APIKey:   ac.ModelConfig.APIKey,
+			},
+			CustomConfig: ac.Custom,
+		}
+
+		if err := reg.Register(ctx, ac.Name, tenantID, a, adapterCfg, nil, nil); err != nil {
+			return fmt.Errorf("register agent %q: %w", ac.Name, err)
+		}
+		slog.Info("adapter registered", "name", ac.Name, "type", ac.Type, "tenant", tenantID)
+	}
+
+	for _, rc := range cfg.Routes {
+		tenantID := rc.TenantID
+		if tenantID == "" {
+			tenantID = "default"
+		}
+		timeoutMins := rc.TimeoutMinutes
+		if timeoutMins == 0 {
+			timeoutMins = 10
+		}
+
+		route := &store.AlertRoute{
+			Name:               rc.Name,
+			TenantID:           tenantID,
+			Enabled:            rc.Enabled,
+			Priority:           rc.Priority,
+			MatchLabels:        rc.MatchLabels,
+			MatchSources:       rc.MatchSources,
+			AgentName:          rc.AgentName,
+			BudgetMaxUSD:       rc.BudgetMaxUSD,
+			BudgetMaxTokens:    rc.BudgetMaxTokens,
+			TimeoutMinutes:     timeoutMins,
+		}
+		if err := st.UpsertAlertRoute(ctx, route); err != nil {
+			return fmt.Errorf("seed route %q: %w", rc.Name, err)
+		}
+		slog.Info("alert route seeded", "name", rc.Name, "agent", rc.AgentName, "tenant", tenantID)
+	}
+
+	return nil
+}
+
+// newAdapter instantiates a compiled-in adapter by type name.
+// For M1, adapters are compiled-in Go types.
+// For M5+, this will also handle sidecar gRPC adapter registration.
+func newAdapter(adapterType string) (sdkadapter.AgentAdapter, error) {
+	switch adapterType {
+	case "holmesgpt":
+		return holmesgpt.New(), nil
+	case "minimal":
+		return minimal.New(), nil
+	default:
+		return nil, fmt.Errorf("unknown adapter type %q (supported: holmesgpt, minimal)", adapterType)
+	}
 }

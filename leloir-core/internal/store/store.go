@@ -32,6 +32,7 @@ type Store interface {
 	ListAgents(ctx context.Context, tenantID string) ([]*Agent, error)
 
 	// Alert routes
+	UpsertAlertRoute(ctx context.Context, r *AlertRoute) error
 	ListAlertRoutes(ctx context.Context, tenantID string) ([]*AlertRoute, error)
 
 	// Audit log

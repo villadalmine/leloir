@@ -110,6 +110,15 @@ func (m *memoryStore) ListAgents(ctx context.Context, tenantID string) ([]*Agent
 	return out, nil
 }
 
+func (m *memoryStore) UpsertAlertRoute(ctx context.Context, r *AlertRoute) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	key := r.TenantID + "/" + r.Name
+	cp := *r
+	m.alertRoutes[key] = &cp
+	return nil
+}
+
 func (m *memoryStore) ListAlertRoutes(ctx context.Context, tenantID string) ([]*AlertRoute, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()

@@ -9,7 +9,7 @@ api:
   httpAddr: ":8080"
 
 database:
-  driver: memory          # in-memory, non-persistent — perfect for M0
+  driver: memory          # in-memory, non-persistent — perfect for M0/M1 dev
   # driver: postgres
   # dsn: postgres://leloir:leloir@localhost:5432/leloir?sslmode=disable
 
@@ -19,7 +19,7 @@ auth:
     username: developer
 
 llmGateway:
-  enabled: false          # M1+ — for now, adapters talk directly to Anthropic
+  enabled: false          # M3+ — for M1, adapters talk directly to Holmes
 
 mcpGateway:
   endpoint: "http://localhost:8082"
@@ -43,4 +43,34 @@ observability:
   environment: local
 
 kubernetes:
-  enabled: false          # M2+ — M0 doesn't need CRD reconciliation
+  enabled: false          # M2+ — M1 doesn't need CRD reconciliation
+
+# ─── Adapters ────────────────────────────────────────────────────────────────
+# List of agent adapters to register at startup.
+# Type must match a compiled-in adapter: "holmesgpt" or "minimal".
+
+agents:
+  - name: holmesgpt
+    type: holmesgpt
+    tenantID: default
+    modelConfig:
+      model: "gemma4-31b"   # Holmes model alias (matches holmesgpt.modelList in Helm)
+    custom:
+      holmes:
+        # Port-forward Holmes before running locally:
+        #   kubectl port-forward -n holmesgpt svc/holmesgpt-holmes 8888:80
+        apiBaseURL: "http://localhost:8888"
+
+# ─── Alert Routes ─────────────────────────────────────────────────────────────
+# Alert routes seeded at startup (no CRDs needed for M1 dev).
+# Empty matchLabels = match ALL alerts.
+
+routes:
+  - name: default-route
+    tenantID: default
+    enabled: true
+    priority: 1
+    agentName: holmesgpt
+    budgetMaxUSD: 1.0
+    budgetMaxTokens: 200000
+    timeoutMinutes: 15
