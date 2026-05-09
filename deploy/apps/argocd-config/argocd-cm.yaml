@@ -6,6 +6,20 @@ metadata:
 data:
   url: https://argocd.leloir.cybercirujas.club
   admin.enabled: "false"
+  server.rbac.log.enforce.enable: "true"
+  # Usa preferred_username (GitHub login) como claim de identidad para RBAC.
+  # Sin esto, ArgoCD usa el sub opaco de Dex (ej. CgcxMDcwMTg0EgZnaXRodWI) y
+  # los g, villadalmine, role:admin del rbac-cm nunca matchean.
+  oidc.config: |
+    requestedScopes:
+      - openid
+      - profile
+      - email
+    requestedIDTokenClaims:
+      preferred_username:
+        essential: true
+      email:
+        essential: true
   dex.config: |
     connectors:
     - type: github
@@ -15,3 +29,5 @@ data:
         clientID: $dex.github.clientID
         clientSecret: $dex.github.clientSecret
         redirectURI: https://argocd.leloir.cybercirujas.club/api/dex/callback
+        getUserInfo: true
+        userNameKey: login
