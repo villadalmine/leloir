@@ -4,9 +4,9 @@ metadata:
   name: argocd-rbac-cm
   namespace: argocd
 data:
-  # Solo villadalmine tiene acceso admin. Cualquier otro GitHub user que se autentique
-  # no tiene permisos (policy.default vacío = sin acceso).
+  # scopes: incluir email además de groups para que g, user@email, role:admin funcione.
+  # Sin email en scopes, ArgoCD solo matchea federated_claims.user_id (ej. "1070184").
+  scopes: '[groups, email]'
   policy.csv: |
-    g, villadalmine, role:admin
     g, villadalmine@gmail.com, role:admin
   policy.default: "role:"
