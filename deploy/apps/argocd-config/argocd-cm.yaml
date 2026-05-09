@@ -7,11 +7,6 @@ data:
   url: https://argocd.leloir.cybercirujas.club
   admin.enabled: "false"
   server.rbac.log.enforce.enable: "true"
-  # Usa preferred_username (GitHub login) como claim de identidad para RBAC.
-  # Sin esto, ArgoCD usa el sub opaco de Dex (ej. CgcxMDcwMTg0EgZnaXRodWI) y
-  # los g, villadalmine, role:admin del rbac-cm nunca matchean.
-  oidc.config: |
-    usernameClaim: preferred_username
   dex.config: |
     connectors:
     - type: github
