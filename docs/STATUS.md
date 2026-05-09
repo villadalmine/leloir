@@ -1,6 +1,6 @@
 # Leloir — Project Status
 
-**Última actualización:** 8 de mayo de 2026
+**Última actualización:** 9 de mayo de 2026
 **Fase:** M0 PoC COMPLETADO. Infraestructura productiva operativa. Pendiente 3 gates formales antes de M1.
 
 ---
@@ -39,6 +39,15 @@
 - **ArgoCD**: GitHub OAuth via Dex. Admin local DESHABILITADO. Solo `villadalmine` → Admin.
 - **Grafana**: GitHub OAuth. Login form deshabilitado. Solo `villadalmine` → Admin.
 - **PoC**: GitHub OAuth via oauth2-proxy. Solo `villadalmine@gmail.com` autorizado.
+
+### Incidente resuelto — ArgoCD OAuth login sin permisos (9 mayo 2026)
+- **Síntoma:** login con GitHub exitoso pero UI vacía/sin acceso a apps.
+- **Causa raíz:** RBAC evaluaba claims distintos (Dex `federated_claims.user_id` / scopes por default) y la policy no matcheaba correctamente contra el usuario autenticado.
+- **Fix persistente en git:** 
+  - `deploy/apps/argocd-config/argocd-rbac-cm.yaml` → `scopes: '[groups, email]'` + binding explícito por email.
+  - `deploy/apps/argocd-config/argocd-cm.yaml` → Dex GitHub con `getUserInfo: true` y `userNameKey: login`.
+  - Se removió `oidc.config` porque rompía login (`unsupported protocol scheme ""`).
+- **Lección operativa:** no parchear solo live en cluster; con ArgoCD self-heal los cambios manuales se revierten. Primero commit/push en `deploy/apps/argocd-config/` y luego refresh/sync.
 
 ---
 
