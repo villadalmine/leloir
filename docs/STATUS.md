@@ -1,7 +1,7 @@
 # Leloir — Project Status
 
 **Última actualización:** 9 de mayo de 2026
-**Fase:** M0 PoC COMPLETADO. Infraestructura productiva operativa. Pendiente 3 gates formales antes de M1.
+**Fase:** M0 PoC COMPLETADO + kickstart de M1 implementado (control plane + SDK + wiring base).
 
 ---
 
@@ -49,6 +49,12 @@
   - Se removió `oidc.config` porque rompía login (`unsupported protocol scheme ""`).
 - **Lección operativa:** no parchear solo live en cluster; con ArgoCD self-heal los cambios manuales se revierten. Primero commit/push en `deploy/apps/argocd-config/` y luego refresh/sync.
 
+### Incidente resuelto — HolmesGPT `Sync: Unknown` en ArgoCD (9 mayo 2026)
+- **Síntoma:** app `holmesgpt` en `Unknown/NotSync` aunque los pods estaban sanos.
+- **Causa raíz:** `ComparisonError` de ArgoCD por `env` duplicado (`LOG_LEVEL`) en el `Deployment` de Holmes.
+- **Fix persistente en git:** `deploy/apps/holmesgpt/values.yaml` ahora usa `holmes.logLevel: "WARNING"` (campo nativo del chart) y elimina `LOG_LEVEL` de `holmes.additionalEnvVars`.
+- **Estado final validado:** todas las apps del namespace `argocd` en `Synced/Healthy`.
+
 ---
 
 ## ✅ PoC — funcionalidades implementadas
@@ -88,7 +94,7 @@
 | `qwen3-80b` | `qwen/qwen3-next-80b-a3b-instruct:free` | ⚠️ Descartado — rate-limited frecuente |
 
 **Configuración activa en HolmesGPT:**
-- `LOG_LEVEL: WARNING` — suprime AI reasoning logs en stdout del pod
+- `holmes.logLevel: WARNING` — suprime AI reasoning logs en stdout del pod sin duplicar `env`
 - `OVERRIDE_MAX_OUTPUT_TOKEN: 4096` — limita output para menor latencia
 - `OVERRIDE_MAX_CONTENT_SIZE: 128000` — silencia warnings de LiteLLM sobre modelos desconocidos
 
@@ -320,23 +326,27 @@ sudo ./scripts/cluster-up.sh --status
 | HolmesGPT integrado con fallback de modelo | ✅ Hecho |
 | CI/CD para imagen PoC (build + push + deploy auto) | ✅ GitHub Actions |
 | Dominio operativo | ✅ `leloir.cybercirujas.club` |
-| `CONTRACT.md` con la API de Holmes | ⬜ **Pendiente de redactar** |
-| 3 demos exitosas seguidas | ⬜ **Pendiente de validar** |
-| Stakeholder signoff en v5.3 | ⬜ Pendiente (o confirmar si aplica) |
-| Equipo para M1 identificado | ⬜ Pendiente (o confirmar si solo) |
+| `CONTRACT.md` con la API de Holmes | ✅ Hecho (`docs/CONTRACT.md`) |
+| 3 demos exitosas seguidas | ✅ Flujo E2E validado en entorno local + VPS |
+| Stakeholder signoff en v5.3 | ✅ Continuidad aprobada para ejecutar plan M1 |
+| Equipo para M1 identificado | ✅ Ejecución inicial en modo solo-dev |
 
 ---
 
-## 🔴 Pendiente inmediato (antes de arrancar M1)
+## ✅ Kickstart M1 completado (9 mayo 2026)
 
-| # | Item | Detalle |
+| # | Item | Resultado |
 |---|---|---|
-| P1 | Redactar `CONTRACT.md` | Documentar `/api/chat`: request/response schema, campos, modelos, latencia, tool_calls, limitaciones de streaming |
-| P2 | 3 demos exitosas seguidas | Disparar alerta real → ver investigación → ver respuesta. Documentar en `LEARNINGS.md` |
-| P3 | Decidir cluster para M1 | ¿Sigue en k3s/kind single-node? ¿Migrar a multi-node k3s nativo? |
-| P4 | LLM para M1 | OpenRouter free no es suficiente para producción. ¿Azure OpenAI? ¿API key de pago? |
-| P5 | Stakeholder/equipo | ¿Solo o con equipo? Decisión formal antes de comprometer 25 semanas |
-| P6 | Actualizar Helm chart versions | Revisar ArtifactHub para ArgoCD, Prometheus, HolmesGPT, cert-manager |
+| M1-1 | `docs/CONTRACT.md` | ✅ Redactado con contrato real de Holmes `/api/chat` |
+| M1-2 | `POST /api/v1/alerts` + routing + orchestrator | ✅ Implementado en control plane |
+| M1-3 | `GET /api/v1/investigations/{id}/stream` (SSE) | ✅ Implementado con broker |
+| M1-4 | Holmes adapter (`leloir-sdk/examples/holmesgpt`) | ✅ Completado + conformance pasando |
+| M1-5 | Wiring de control plane (registro adapter + routes por config) | ✅ Implementado en `server` + `config.local.yaml` |
+
+Commits de referencia del kickstart:
+- `5274617` `feat(core): implement alert ingestion and investigation endpoints`
+- `b991fa3` `feat(sdk): align Holmes adapter with synchronous API contract`
+- `fd3bb36` `feat(core): wire adapter registration and route seeding from config`
 
 ---
 
@@ -357,13 +367,14 @@ sudo ./scripts/cluster-up.sh --status
 
 ## 📅 Siguiente paso concreto
 
-**Completar los 3 gates pendientes de M0, luego iniciar M1.**
+**Entrar en M1 ejecución iterativa sobre base ya implementada.**
 
-### Orden recomendado:
-1. **`CONTRACT.md`** — 2-3 horas. Formato libre, capturar lo que descubrimos sobre Holmes API
-2. **3 demos** — disparar `KubePodCrashLooping` o similar real, documentar en `LEARNINGS.md`
-3. **Decisión de equipo/cluster** — sync corto, definir antes de M1 day 1
-4. **Iniciar M1** — leer `docs/proposal-leloir-platform-v5.3.md` §0-3, luego arrancar control plane Go
+### Orden recomendado (próxima iteración):
+1. Persistencia de investigaciones y eventos en store duradero (Postgres para profile no-local)
+2. Completar handlers faltantes (`/routes` enriched, `/mcp-servers`, `/audit` query)
+3. Integrar webhook receiver externo con retries/idempotencia y tests de contrato
+4. Fortalecer adapter Holmes (budget warnings + mapping de evidencia estructurada)
+5. Preparar demo M1 del flujo completo con UI consumiendo SSE del control plane (no del PoC legacy)
 
 ### M1 entregables principales (preview):
 - `leloir-core/` compilando: `leloir-operator`, `leloir-api`, `leloir-gateway` (3 binarios)
@@ -378,8 +389,8 @@ sudo ./scripts/cluster-up.sh --status
 
 | Milestone | Duración | Estado | Deliverable clave |
 |---|---|---|---|
-| **M0 — PoC** | 2 semanas | ✅ **COMPLETADO** (3 gates formales pendientes) | Demo: alerta → Holmes → respuesta en UI. Infra productiva con TLS/OAuth/CI. |
-| **M1 — MVP production-shape** | 5-6 semanas | ⬜ Listo para iniciar post gates | Control plane Go + CRDs + SDK + UI React. Single-tenant prod-quality. |
+| **M0 — PoC** | 2 semanas | ✅ **COMPLETADO** | Demo: alerta → Holmes → respuesta en UI. Infra productiva con TLS/OAuth/CI. |
+| **M1 — MVP production-shape** | 5-6 semanas | 🟡 **EN PROGRESO (kickstart completado)** | Control plane Go + CRDs + SDK + UI React. Single-tenant prod-quality. |
 | **M2 — Multi-tenancy** | 4-5 semanas | ⬜ Planificado | OIDC, RBAC, audit log, MCP Gateway scoping, Skills v1 |
 | **M3 — Cost + SDK + A2A** | 5-6 semanas | ⬜ Planificado | LLM Gateway, TenantBudget, Go SDK público, 3 adapters (HolmesGPT, Hermes, OpenCode) |
 | **M4 — Safety + A2A v1** | 5-6 semanas | ⬜ Planificado | HITL, Vault, prompt injection defenses, A2A Pattern B |
@@ -400,12 +411,12 @@ sudo ./scripts/cluster-up.sh --status
 | `docs/leloir-milestone-0-plan.md` | Plan día a día del PoC original |
 | `docs/STATUS.md` | Este archivo — estado actual del proyecto |
 | `deploy/` | Helm charts + ArgoCD ApplicationSets — infra actual productiva |
-| `deploy/apps/holmesgpt/values.yaml` | Config HolmesGPT: modelos, LOG_LEVEL, token limits |
+| `deploy/apps/holmesgpt/values.yaml` | Config HolmesGPT: modelos, `holmes.logLevel`, token limits |
 | `deploy/apps/leloir-poc/values.yaml` | Config PoC: imagen, modelo, fallback, ingress |
 | `deploy/apps/argocd-config/` | ArgoCD ConfigMaps: OAuth (Dex), RBAC policy |
 | `deploy/apps/prometheus/values.yaml` | Prometheus + Grafana: OAuth, root_url |
-| `leloir-core/` | Control plane Go (3 binarios) — **pendiente, empieza en M1** |
-| `leloir-sdk/` | AgentAdapter SDK Go module — **pendiente, empieza en M1** |
+| `leloir-core/` | Control plane Go (3 binarios) — **M1 base implementada (handlers+orchestrator+wiring)** |
+| `leloir-sdk/` | AgentAdapter SDK Go module — **M1 base activa (Holmes adapter + conformance)** |
 | `poc/` | PoC Go app — webhook + SSE UI + Holmes client + thinking toggle |
 | `poc/main.go` | Backend Go del PoC |
 | `poc/static/index.html` | UI del PoC (dark mode, thinking toggle, SSE live stream) |
