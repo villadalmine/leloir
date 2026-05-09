@@ -1,11 +1,21 @@
 package conformance
 
-import "time"
+import (
+	"time"
+
+	"github.com/leloir/sdk/adapter"
+)
 
 // Options configures the conformance suite.
 //
 // Pass to RunSuite to customize behavior. Use DefaultOptions() for sensible defaults.
 type Options struct {
+	// ConfigFactory, if set, is called to produce the adapter.Config used in
+	// Configure tests and mustConfigure. Override this when your adapter requires
+	// adapter-specific CustomConfig fields that are not in the default SampleConfig.
+	// If nil, SampleConfig() is used.
+	ConfigFactory func() adapter.Config
+
 	// MockLLM, if true, indicates the adapter is configured to use a mock LLM
 	// (the suite will not require real network access for LLM calls).
 	// Implementations should set this in their adapter via CustomConfig.
@@ -54,6 +64,15 @@ func DefaultOptions() Options {
 	o := Options{}
 	o.applyDefaults()
 	return o
+}
+
+// sampleConfig returns the config to use for Configure tests.
+// If ConfigFactory is set, it calls it; otherwise falls back to SampleConfig.
+func (o Options) sampleConfig() adapter.Config {
+	if o.ConfigFactory != nil {
+		return o.ConfigFactory()
+	}
+	return SampleConfig()
 }
 
 func (o *Options) applyDefaults() {

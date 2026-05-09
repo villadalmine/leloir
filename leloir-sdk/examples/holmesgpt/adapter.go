@@ -19,6 +19,10 @@ import (
 // buildVersion is set at compile time via -ldflags.
 var buildVersion = "0.1.0-dev"
 
+// maxToolDescLen is the maximum length of a tool call description emitted as
+// a thought event. Mirrors the PoC behavior (120 chars + ellipsis).
+const maxToolDescLen = 120
+
 // Adapter wraps HolmesGPT as a Leloir AgentAdapter.
 type Adapter struct {
 	config     adapter.Config
@@ -30,10 +34,11 @@ type Adapter struct {
 var _ adapter.AgentAdapter = (*Adapter)(nil)
 
 // New returns a new HolmesGPT adapter.
+// The HTTP client timeout is 5 minutes to match holmesApiTimeout in the Helm chart.
 func New() *Adapter {
 	return &Adapter{
 		httpClient: &http.Client{
-			Timeout: 60 * time.Second,
+			Timeout: 5 * time.Minute,
 		},
 	}
 }
@@ -54,7 +59,7 @@ func (a *Adapter) Identity() adapter.AgentIdentity {
 			"kubernetes-mcp",
 			"prometheus-mcp",
 			"loki-mcp",
-			"*", // Holmes accepts any MCP source
+			"*",
 		},
 		Tags: map[string]string{
 			"license":  "Apache-2.0",
@@ -64,13 +69,15 @@ func (a *Adapter) Identity() adapter.AgentIdentity {
 	}
 }
 
-// Configure validates the config and establishes connection to HolmesGPT.
+// Configure validates config and stores the Holmes API base URL.
+// Required: customConfig.holmes.apiBaseURL (string).
+// Optional: modelConfig.model (Holmes model alias, e.g. "gemma4-31b").
 func (a *Adapter) Configure(ctx context.Context, config adapter.Config) error {
 	holmesConfig, ok := config.CustomConfig["holmes"].(map[string]any)
 	if !ok {
 		return adapter.NewConfigError(
 			"customConfig.holmes",
-			"required (a map with apiBaseURL key)",
+			"required (map with apiBaseURL key)",
 		)
 	}
 
@@ -78,29 +85,21 @@ func (a *Adapter) Configure(ctx context.Context, config adapter.Config) error {
 	if !ok || apiURL == "" {
 		return adapter.NewConfigError(
 			"customConfig.holmes.apiBaseURL",
-			"required (string)",
+			"required (string, e.g. http://holmesgpt-holmes.holmesgpt:80)",
 		)
 	}
 
 	a.config = config
 	a.holmesURL = apiURL
-
-	if config.ModelConfig.Endpoint == "" {
-		return adapter.NewConfigError(
-			"modelConfig.endpoint",
-			"required",
-		)
-	}
-
 	return nil
 }
 
-// HealthCheck verifies HolmesGPT is reachable.
+// HealthCheck verifies HolmesGPT is reachable via GET /health.
 func (a *Adapter) HealthCheck(ctx context.Context) error {
 	if a.holmesURL == "" {
 		return &adapter.AdapterError{
 			Code:    adapter.ErrCodeUnhealthy,
-			Message: "adapter not configured",
+			Message: "adapter not configured (call Configure first)",
 		}
 	}
 
@@ -129,14 +128,14 @@ func (a *Adapter) HealthCheck(ctx context.Context) error {
 	if resp.StatusCode != http.StatusOK {
 		return &adapter.AdapterError{
 			Code:    adapter.ErrCodeUnhealthy,
-			Message: fmt.Sprintf("Holmes returned status %d", resp.StatusCode),
+			Message: fmt.Sprintf("Holmes health check returned %d", resp.StatusCode),
 		}
 	}
 	return nil
 }
 
-// Investigate forwards the request to HolmesGPT and translates its streaming
-// response into Leloir Events.
+// Investigate calls HolmesGPT synchronously and streams the translated events.
+// Holmes returns a single JSON response; the adapter converts it to Leloir events.
 func (a *Adapter) Investigate(
 	ctx context.Context,
 	req adapter.InvestigateRequest,
@@ -161,21 +160,19 @@ func (a *Adapter) Investigate(
 	go func() {
 		defer close(ch)
 		defer recoverPanic(ch, req.InvestigationID, seq)
-
 		a.runInvestigation(ctx, req, ch, seq, budget)
 	}()
 
 	return ch, nil
 }
 
-// Shutdown closes idle connections.
+// Shutdown closes idle HTTP connections.
 func (a *Adapter) Shutdown(ctx context.Context) error {
 	a.httpClient.CloseIdleConnections()
 	return nil
 }
 
-// runInvestigation is the core investigation loop. Separated from Investigate
-// for clarity and panic-recovery wrapping.
+// runInvestigation calls Holmes and converts the response to Leloir events.
 func (a *Adapter) runInvestigation(
 	ctx context.Context,
 	req adapter.InvestigateRequest,
@@ -183,76 +180,71 @@ func (a *Adapter) runInvestigation(
 	seq *adapter.SequenceCounter,
 	budget *adapter.BudgetTracker,
 ) {
-	// Build the prompt for Holmes
-	holmesReq := buildHolmesRequest(req, a.config)
-
-	// Call Holmes streaming API
-	sseCh, err := a.callHolmesStreaming(ctx, holmesReq)
-	if err != nil {
-		sendError(ch, req.InvestigationID, seq, adapter.ErrCodeLLMUnavailable, err.Error(), false, ctx.Done())
-		sendComplete(ch, req.InvestigationID, seq, adapter.OutcomeError, "failed to call Holmes", 0, 0, ctx.Done())
+	// Announce the investigation start
+	if !adapter.SafeSendEvent(ch, adapter.NewEvent(req.InvestigationID, seq.Next(),
+		adapter.EventThought,
+		adapter.ThoughtPayload{
+			Content: "Investigating: " + req.AlertContext.Title,
+		}), ctx.Done()) {
 		return
 	}
 
-	// Translate Holmes SSE events into Leloir Events
-	for holmesEvt := range sseCh {
-		// Check context cancellation between events
+	// Call Holmes (synchronous — see CONTRACT.md)
+	holmesReq := buildHolmesRequest(req, a.config)
+	hr, err := a.callHolmes(ctx, holmesReq)
+	if err != nil {
+		sendError(ch, req.InvestigationID, seq, adapter.ErrCodeLLMUnavailable, err.Error(), false, ctx.Done())
+		sendComplete(ch, req.InvestigationID, seq, adapter.OutcomeError, err.Error(), 0, 0, ctx.Done())
+		return
+	}
+
+	// Emit tool call thoughts (filter Holmes internal bookkeeping tools)
+	for _, tc := range hr.ToolCalls {
+		if tc.ToolName == "TodoWrite" || tc.ToolName == "TodoRead" {
+			continue
+		}
 		select {
 		case <-ctx.Done():
 			sendComplete(ch, req.InvestigationID, seq, adapter.OutcomeCancelled, "context cancelled", 0, 0, ctx.Done())
 			return
 		default:
 		}
-
-		// Translate based on event type
-		leloirEvt, isFinal, ok := translateHolmesEvent(req.InvestigationID, seq, holmesEvt, budget)
-		if !ok {
-			continue // unknown event type, skip
+		desc := tc.Description
+		if len(desc) > maxToolDescLen {
+			desc = desc[:maxToolDescLen] + "…"
 		}
-
-		if !adapter.SafeSendEvent(ch, leloirEvt, ctx.Done()) {
+		budget.RecordToolCall()
+		if !adapter.SafeSendEvent(ch, adapter.NewEvent(req.InvestigationID, seq.Next(),
+			adapter.EventThought,
+			adapter.ThoughtPayload{Content: tc.ToolName + ": " + desc}), ctx.Done()) {
 			return
 		}
 
-		// Check budget after every event that consumes resources
-		if shouldRecord(holmesEvt) {
-			if can, reason := budget.CanContinue(); !can {
-				tokensUsed, usdSpent, _, _ := budget.Snapshot()
-				sendComplete(ch, req.InvestigationID, seq, adapter.OutcomeBudgetExhausted, reason, tokensUsed, usdSpent, ctx.Done())
-				return
-			}
-			// Emit budget warnings if a threshold was crossed
-			if resource, threshold := budget.CheckThreshold(); resource != "" {
-				tokensUsed, usdSpent, _, _ := budget.Snapshot()
-				_ = adapter.SafeSendEvent(ch, adapter.NewEvent(req.InvestigationID, seq.Next(),
-					adapter.EventBudgetWarning,
-					adapter.BudgetWarningPayload{
-						Resource:    resource,
-						UsedPercent: threshold,
-						Used:        budgetResourceUsed(resource, tokensUsed, usdSpent),
-						Limit:       budgetResourceLimit(resource, req.BudgetLimit),
-					}), ctx.Done())
-			}
-		}
-
-		if isFinal {
+		if ok, reason := budget.CanContinue(); !ok {
 			tokensUsed, usdSpent, _, _ := budget.Snapshot()
-			sendComplete(ch, req.InvestigationID, seq, adapter.OutcomeSuccess, "", tokensUsed, usdSpent, ctx.Done())
+			sendComplete(ch, req.InvestigationID, seq, adapter.OutcomeBudgetExhausted, reason, tokensUsed, usdSpent, ctx.Done())
 			return
 		}
 	}
 
-	// SSE stream ended without a final event — treat as no_result
+	// Emit the final answer
+	if !adapter.SafeSendEvent(ch, adapter.NewEvent(req.InvestigationID, seq.Next(),
+		adapter.EventAnswer,
+		adapter.AnswerPayload{
+			Summary:    hr.Analysis,
+			RootCause:  hr.Analysis,
+			Confidence: 0.7,
+		}), ctx.Done()) {
+		return
+	}
+
 	tokensUsed, usdSpent, _, _ := budget.Snapshot()
-	sendComplete(ch, req.InvestigationID, seq, adapter.OutcomeNoResult, "Holmes stream ended without answer", tokensUsed, usdSpent, ctx.Done())
+	sendComplete(ch, req.InvestigationID, seq, adapter.OutcomeSuccess, "", tokensUsed, usdSpent, ctx.Done())
 }
 
-// recoverPanic is deferred in the investigation goroutine to ensure panics
-// don't crash the adapter.
+// recoverPanic ensures adapter goroutine panics never crash the control plane.
 func recoverPanic(ch chan<- adapter.Event, investigationID string, seq *adapter.SequenceCounter) {
 	if r := recover(); r != nil {
-		// Best-effort: try to send error + complete events, but don't block
-		// (since we may not have a healthy ctx anymore).
 		select {
 		case ch <- adapter.NewEvent(investigationID, seq.Next(), adapter.EventError,
 			adapter.ErrorPayload{
@@ -290,26 +282,4 @@ func sendComplete(ch chan<- adapter.Event, investigationID string, seq *adapter.
 			TotalTokens: tokens,
 			TotalCost:   cost,
 		}), doneCh)
-}
-
-func budgetResourceUsed(resource string, tokens int64, usd float64) float64 {
-	switch resource {
-	case "tokens":
-		return float64(tokens)
-	case "usd":
-		return usd
-	}
-	return 0
-}
-
-func budgetResourceLimit(resource string, b adapter.Budget) float64 {
-	switch resource {
-	case "tokens":
-		return float64(b.MaxTokens)
-	case "usd":
-		return b.MaxUSD
-	case "tool_calls":
-		return float64(b.MaxToolCalls)
-	}
-	return 0
 }

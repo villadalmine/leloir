@@ -1,113 +1,78 @@
 package holmesgpt
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 
 	"github.com/leloir/sdk/adapter"
 )
 
 // holmesAPIRequest is the payload Holmes expects on POST /api/chat.
+// Holmes currently returns a synchronous JSON response (no SSE streaming).
+// See docs/CONTRACT.md for the full API specification.
 type holmesAPIRequest struct {
-	Ask            string            `json:"ask"`
-	AvailableTools []string          `json:"available_tools,omitempty"`
-	Stream         bool              `json:"stream"`
-	ModelConfig    holmesModelConfig `json:"model_config,omitempty"`
-	SessionID      string            `json:"session_id,omitempty"`
+	Ask   string `json:"ask"`
+	Model string `json:"model,omitempty"` // Holmes model alias, e.g. "gemma4-31b"
 }
 
-// holmesModelConfig is Holmes's representation of the LLM endpoint.
-// It maps to OpenAI-compatible API config; the LLM Gateway speaks this dialect.
-type holmesModelConfig struct {
-	Provider string `json:"provider"`
-	Endpoint string `json:"endpoint"`
-	APIKey   string `json:"api_key"`
-	Model    string `json:"model"`
+// holmesAPIResponse is the JSON response from POST /api/chat.
+type holmesAPIResponse struct {
+	Analysis  string     `json:"analysis"`  // final answer in markdown
+	Detail    string     `json:"detail"`    // non-empty only on error
+	ToolCalls []toolCall `json:"tool_calls"`
 }
 
-// holmesEvent is one SSE event from Holmes's stream.
-// We accept a flexible shape to tolerate Holmes API evolution.
-type holmesEvent struct {
-	Type           string         `json:"type"`
-	Content        string         `json:"content,omitempty"`
-	ToolName       string         `json:"tool_name,omitempty"`
-	ToolArgs       map[string]any `json:"tool_args,omitempty"`
-	Model          string         `json:"model,omitempty"`
-	InputTokens    int            `json:"input_tokens,omitempty"`
-	OutputTokens   int            `json:"output_tokens,omitempty"`
-	Cost           float64        `json:"cost,omitempty"`
-	Summary        string         `json:"summary,omitempty"`
-	RootCause      string         `json:"root_cause,omitempty"`
-	Recommendation string         `json:"recommendation,omitempty"`
-	Confidence     float64        `json:"confidence,omitempty"`
-	Error          string         `json:"error,omitempty"`
+type toolCall struct {
+	ToolName    string `json:"tool_name"`
+	Description string `json:"description"`
 }
 
-// buildHolmesRequest converts a Leloir InvestigateRequest into the format
-// HolmesGPT's HTTP API expects.
+// buildHolmesRequest assembles the payload from a Leloir InvestigateRequest.
 func buildHolmesRequest(req adapter.InvestigateRequest, cfg adapter.Config) holmesAPIRequest {
-	prompt := buildPrompt(req)
 	return holmesAPIRequest{
-		Ask:            prompt,
-		AvailableTools: req.AvailableTools,
-		Stream:         true,
-		SessionID:      req.SessionID,
-		ModelConfig: holmesModelConfig{
-			Provider: "openai", // OpenAI-compatible (LLM Gateway speaks this)
-			Endpoint: cfg.ModelConfig.Endpoint,
-			APIKey:   cfg.ModelConfig.APIKey,
-			Model:    cfg.ModelConfig.Model,
-		},
+		Ask:   buildPrompt(req),
+		Model: cfg.ModelConfig.Model,
 	}
 }
 
-// buildPrompt assembles the prompt text for Holmes from the alert context.
-// The alert content is wrapped in untrusted markers to defend against
-// prompt injection.
+// buildPrompt converts the alert context to the question text Holmes expects.
+// Alert content is wrapped in untrusted markers to help Holmes distinguish
+// platform instructions from potentially-injected alert payloads.
 func buildPrompt(req adapter.InvestigateRequest) string {
-	var sb strings.Builder
-	sb.WriteString("Investigate the following alert. Use available tools to gather evidence and determine root cause.\n\n")
-	sb.WriteString("<alert>\n")
-	sb.WriteString("source: ")
-	sb.WriteString(req.AlertContext.Source)
-	sb.WriteString("\nseverity: ")
-	sb.WriteString(req.AlertContext.Severity)
-	sb.WriteString("\ntitle: ")
-	sb.WriteString(req.AlertContext.Title)
-	sb.WriteString("\n\n<untrusted-content>\n")
-	sb.WriteString(req.AlertContext.Description)
-	sb.WriteString("\n</untrusted-content>\n")
-	sb.WriteString("</alert>\n")
+	var b bytes.Buffer
+	b.WriteString("Investigate the following alert. Use available tools to gather evidence and determine the root cause. Suggest a concrete remediation.\n\n")
+	b.WriteString("<alert>\n")
+	fmt.Fprintf(&b, "source: %s\n", req.AlertContext.Source)
+	fmt.Fprintf(&b, "severity: %s\n", req.AlertContext.Severity)
+	fmt.Fprintf(&b, "title: %s\n", req.AlertContext.Title)
+	b.WriteString("\n<untrusted-content>\n")
+	b.WriteString(req.AlertContext.Description)
+	b.WriteString("\n</untrusted-content>\n")
+	b.WriteString("</alert>\n")
 
 	if len(req.AlertContext.Labels) > 0 {
-		sb.WriteString("\n<labels>\n")
+		b.WriteString("\n<labels>\n")
 		for k, v := range req.AlertContext.Labels {
-			sb.WriteString(fmt.Sprintf("%s=%s\n", k, v))
+			fmt.Fprintf(&b, "%s=%s\n", k, v)
 		}
-		sb.WriteString("</labels>\n")
+		b.WriteString("</labels>\n")
 	}
 
 	for _, skill := range req.Skills {
-		sb.WriteString("\n<skill name=\"")
-		sb.WriteString(skill.Name)
-		sb.WriteString("\">\n")
-		sb.WriteString(skill.Content)
-		sb.WriteString("\n</skill>\n")
+		fmt.Fprintf(&b, "\n<skill name=%q>\n%s\n</skill>\n", skill.Name, skill.Content)
 	}
 
-	return sb.String()
+	return b.String()
 }
 
-// callHolmesStreaming POSTs to Holmes's /api/chat endpoint and returns a
-// channel of parsed SSE events. The channel is closed when the stream ends
-// or an error occurs.
-func (a *Adapter) callHolmesStreaming(ctx context.Context, req holmesAPIRequest) (<-chan holmesEvent, error) {
+// callHolmes POSTs to Holmes's /api/chat and returns the parsed response.
+// Holmes returns a synchronous JSON response — no streaming in the current version.
+// The HTTP client timeout is set to 5 minutes to match holmesApiTimeout in Helm.
+func (a *Adapter) callHolmes(ctx context.Context, req holmesAPIRequest) (*holmesAPIResponse, error) {
 	body, err := json.Marshal(req)
 	if err != nil {
 		return nil, fmt.Errorf("marshal request: %w", err)
@@ -119,68 +84,37 @@ func (a *Adapter) callHolmesStreaming(ctx context.Context, req holmesAPIRequest)
 		return nil, fmt.Errorf("construct request: %w", err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Accept", "text/event-stream")
 
 	resp, err := a.httpClient.Do(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("call Holmes: %w", err)
 	}
+	defer resp.Body.Close()
+
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read Holmes response: %w", err)
+	}
+
+	if resp.StatusCode == http.StatusTooManyRequests {
+		return nil, &adapter.AdapterError{
+			Code:    adapter.ErrCodeLLMRateLimited,
+			Message: "Holmes rate limited (429) — retry later",
+		}
+	}
 	if resp.StatusCode != http.StatusOK {
-		resp.Body.Close()
-		return nil, fmt.Errorf("Holmes returned status %d", resp.StatusCode)
+		return nil, fmt.Errorf("Holmes returned HTTP %d: %s", resp.StatusCode, raw)
 	}
 
-	out := make(chan holmesEvent, 32)
-	go func() {
-		defer close(out)
-		defer resp.Body.Close()
-		parseSSE(ctx, resp.Body, out)
-	}()
-	return out, nil
-}
-
-// parseSSE reads Server-Sent Events from r and pushes parsed holmesEvents to out.
-// Honors ctx cancellation.
-func parseSSE(ctx context.Context, r io.Reader, out chan<- holmesEvent) {
-	scanner := bufio.NewScanner(r)
-	// Accept lines up to 1MB
-	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
-
-	var dataBuf bytes.Buffer
-
-	flush := func() {
-		if dataBuf.Len() == 0 {
-			return
-		}
-		var evt holmesEvent
-		if err := json.Unmarshal(dataBuf.Bytes(), &evt); err == nil {
-			select {
-			case out <- evt:
-			case <-ctx.Done():
-			}
-		}
-		dataBuf.Reset()
+	var hr holmesAPIResponse
+	if err := json.Unmarshal(raw, &hr); err != nil {
+		return nil, fmt.Errorf("unmarshal Holmes response: %w (raw: %.200s)", err, raw)
 	}
-
-	for scanner.Scan() {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-		}
-		line := scanner.Text()
-		if line == "" {
-			// Blank line marks end of event
-			flush()
-			continue
-		}
-		if strings.HasPrefix(line, "data: ") {
-			dataBuf.WriteString(line[len("data: "):])
-		} else if strings.HasPrefix(line, "data:") {
-			dataBuf.WriteString(line[len("data:"):])
-		}
-		// Lines that don't start with "data:" (event:, id:, retry:) are ignored
+	if hr.Detail != "" {
+		return nil, fmt.Errorf("Holmes error: %s", hr.Detail)
 	}
-	// Flush any trailing event without a blank line
-	flush()
+	if hr.Analysis == "" {
+		return nil, fmt.Errorf("Holmes returned empty analysis (raw: %.200s)", raw)
+	}
+	return &hr, nil
 }

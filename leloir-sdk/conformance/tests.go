@@ -46,7 +46,7 @@ func testIdentityHasRequiredFields(t *testing.T, a adapter.AgentAdapter) {
 
 func testConfigureIsIdempotent(t *testing.T, a adapter.AgentAdapter, opts Options) {
 	t.Helper()
-	cfg := SampleConfig()
+	cfg := opts.sampleConfig()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -86,7 +86,7 @@ func testHealthCheckCompletesQuickly(t *testing.T, a adapter.AgentAdapter, opts 
 	t.Helper()
 
 	// Configure first
-	cfg := SampleConfig()
+	cfg := opts.sampleConfig()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := a.Configure(ctx, cfg); err != nil {
@@ -121,7 +121,7 @@ func testHealthCheckCompletesQuickly(t *testing.T, a adapter.AgentAdapter, opts 
 
 func testInvestigateReturnsChannel(t *testing.T, a adapter.AgentAdapter, opts Options) {
 	t.Helper()
-	mustConfigure(t, a)
+	mustConfigure(t, a, opts)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -140,7 +140,7 @@ func testInvestigateReturnsChannel(t *testing.T, a adapter.AgentAdapter, opts Op
 
 func testInvestigateAlwaysClosesChannel(t *testing.T, a adapter.AgentAdapter, opts Options) {
 	t.Helper()
-	mustConfigure(t, a)
+	mustConfigure(t, a, opts)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -160,7 +160,7 @@ func testInvestigateAlwaysClosesChannel(t *testing.T, a adapter.AgentAdapter, op
 
 func testInvestigateAlwaysSendsCompleteEvent(t *testing.T, a adapter.AgentAdapter, opts Options) {
 	t.Helper()
-	mustConfigure(t, a)
+	mustConfigure(t, a, opts)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -183,7 +183,7 @@ func testInvestigateAlwaysSendsCompleteEvent(t *testing.T, a adapter.AgentAdapte
 
 func testInvestigateHonorsContextCancellation(t *testing.T, a adapter.AgentAdapter, opts Options) {
 	t.Helper()
-	mustConfigure(t, a)
+	mustConfigure(t, a, opts)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -207,7 +207,7 @@ func testInvestigateHonorsContextCancellation(t *testing.T, a adapter.AgentAdapt
 
 func testInvestigateHonorsBudget(t *testing.T, a adapter.AgentAdapter, opts Options) {
 	t.Helper()
-	mustConfigure(t, a)
+	mustConfigure(t, a, opts)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -243,7 +243,7 @@ func testInvestigateHonorsBudget(t *testing.T, a adapter.AgentAdapter, opts Opti
 
 func testInvestigateHonorsDeadline(t *testing.T, a adapter.AgentAdapter, opts Options) {
 	t.Helper()
-	mustConfigure(t, a)
+	mustConfigure(t, a, opts)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -265,7 +265,7 @@ func testInvestigateHonorsDeadline(t *testing.T, a adapter.AgentAdapter, opts Op
 
 func testInvestigateRejectsInvalidRequest(t *testing.T, a adapter.AgentAdapter, opts Options) {
 	t.Helper()
-	mustConfigure(t, a)
+	mustConfigure(t, a, opts)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -283,7 +283,7 @@ func testInvestigateRejectsInvalidRequest(t *testing.T, a adapter.AgentAdapter, 
 
 func testInvestigateConcurrentSafe(t *testing.T, a adapter.AgentAdapter, opts Options) {
 	t.Helper()
-	mustConfigure(t, a)
+	mustConfigure(t, a, opts)
 
 	n := opts.MaxConcurrentInvestigations
 	var wg sync.WaitGroup
@@ -317,7 +317,7 @@ func testInvestigateConcurrentSafe(t *testing.T, a adapter.AgentAdapter, opts Op
 
 func testInvestigateRecoversFromPanic(t *testing.T, a adapter.AgentAdapter, opts Options) {
 	t.Helper()
-	mustConfigure(t, a)
+	mustConfigure(t, a, opts)
 
 	// We can't directly cause the adapter to panic, but we can verify that
 	// a malformed/extreme request doesn't take down the whole process.
@@ -355,7 +355,7 @@ func testInvestigateRecoversFromPanic(t *testing.T, a adapter.AgentAdapter, opts
 
 func testShutdownCompletesQuickly(t *testing.T, a adapter.AgentAdapter, opts Options) {
 	t.Helper()
-	mustConfigure(t, a)
+	mustConfigure(t, a, opts)
 
 	ctx, cancel := context.WithTimeout(context.Background(), opts.ShutdownTimeout)
 	defer cancel()
@@ -379,11 +379,11 @@ func testShutdownCompletesQuickly(t *testing.T, a adapter.AgentAdapter, opts Opt
 // Helpers
 // ----------------------------------------------------------------------------
 
-func mustConfigure(t *testing.T, a adapter.AgentAdapter) {
+func mustConfigure(t *testing.T, a adapter.AgentAdapter, opts Options) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if err := a.Configure(ctx, SampleConfig()); err != nil {
+	if err := a.Configure(ctx, opts.sampleConfig()); err != nil {
 		t.Skipf("Configure failed, skipping test: %v", err)
 	}
 }
